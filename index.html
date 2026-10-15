@@ -1,0 +1,2536 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><title>Dental Scan Viewer</title>
+<meta name="description" content="View upper and lower intraoral scans in occlusion, find and measure teeth, Bolton and arch analysis.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f62b0">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scan Viewer">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>if('serviceWorker' in navigator&&location.protocol.startsWith('http')) addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));</script>
+</head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one-screen app. Toolbar on top, 3D stage fills the rest; model panel floats top-left, tool sheet top-right, view bar bottom-centre. */
+:root{
+  --bg:#e9ecea; --panel:#fbfcfb; --line:#d3d9d6; --fg:#1b2220; --muted:#5d6a66;
+  --accent:#2f62b0; --accent-ink:#ffffff; --accent-soft:#dfe8f6;
+  --stage-hi:#f7f8f7; --stage-lo:#d9dfdc; --measure:#d2552c;
+  --good:#2e7d4f; --warn:#b26b00; --bad:#c0392b;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --shadow:0 6px 24px rgba(20,30,28,.12);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101413; --panel:#181e1d; --line:#2b3432; --fg:#e4eae8; --muted:#94a29d;
+  --accent:#7aa3e2; --accent-ink:#0d1420; --accent-soft:#1e2a3d;
+  --stage-hi:#222a29; --stage-lo:#0c100f; --measure:#f08a62;
+  --good:#6cc28f; --warn:#e0a84a; --bad:#ef7b6c;
+  --shadow:0 6px 24px rgba(0,0,0,.45); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101413; --panel:#181e1d; --line:#2b3432; --fg:#e4eae8; --muted:#94a29d;
+  --accent:#7aa3e2; --accent-ink:#0d1420; --accent-soft:#1e2a3d;
+  --stage-hi:#222a29; --stage-lo:#0c100f; --measure:#f08a62;
+  --good:#6cc28f; --warn:#e0a84a; --bad:#ef7b6c;
+  --shadow:0 6px 24px rgba(0,0,0,.45); color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+.bar{display:flex;align-items:center;gap:10px 12px;padding-block:10px;padding-inline:16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;min-width:0;flex:1 1 170px}
+.brand b{font-weight:700;font-size:15px;letter-spacing:-.01em}
+.brand span{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tools .gap{width:1px;height:24px;background:var(--line);margin:0 2px}
+button,.btn,select{font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;touch-action:manipulation}
+button:hover,.btn:hover,select:hover{border-color:var(--muted)}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,.btn:focus-within,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.primary:hover{border-color:var(--accent);filter:brightness(1.06)}
+.btn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+svg.i{width:17px;height:17px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;padding:2px;gap:2px;background:var(--panel)}
+.seg button{border:0;height:30px;padding:0 10px;border-radius:6px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.stage{position:relative;flex:1;min-height:0;background:radial-gradient(ellipse at 50% 35%,var(--stage-hi),var(--stage-lo) 75%);touch-action:none;overflow:hidden}
+.stage canvas{display:block;width:100%;height:100%}
+.card{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);font-size:13px}
+
+/* model panel */
+.panel{left:16px;top:16px;width:300px;max-width:calc(100% - 32px);max-height:calc(100% - 92px);overflow:auto;touch-action:pan-y}
+.panel summary{list-style:none;cursor:pointer;padding:10px 14px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel summary::-webkit-details-marker{display:none}
+.panel summary small{color:var(--muted);font-weight:500;font-family:var(--mono);font-size:12px}
+.panel summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-top:-4px;transition:transform .15s}
+.panel:not([open]) summary::after{transform:rotate(-45deg);margin-top:0}
+.pbody{display:flex;flex-direction:column;gap:12px;padding:0 14px 14px}
+.models{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.model{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:8px}
+.model.off{opacity:.55}
+.model .nm{min-width:0}
+.model .nm b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model .nm small{color:var(--muted);font-family:var(--mono);font-size:11px}
+.model .ctl{grid-column:1/-1;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.model select{height:30px;padding:0 6px;font-size:12px;border-radius:6px}
+.model input[type=range]{flex:1;min-width:70px}
+.icon-btn{width:32px;height:32px;padding:0;justify-content:center}
+.field{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+.field label,.sub{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.field output{font-family:var(--mono);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+input[type=range]{accent-color:var(--accent);min-width:0}
+.orient{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.orient button{height:30px;padding:0 9px;font-size:12px}
+.legend{display:flex;flex-direction:column;gap:6px}
+.legend ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.legend li{display:flex;align-items:center;gap:6px}
+.legend i{width:14px;height:10px;border-radius:2px;flex:none}
+.empty{color:var(--muted);margin:0}
+
+.views{left:50%;bottom:16px;transform:translateX(-50%);display:flex;padding:4px;gap:2px;max-width:calc(100% - 32px);overflow-x:auto}
+.views button{border:0;height:32px;padding:0 10px;font-size:13px;background:transparent;white-space:nowrap}
+.views button:hover{background:var(--accent-soft)}
+.views .sep{width:1px;background:var(--line);margin:4px 2px;flex:none}
+
+/* tool sheets (right) */
+.rightcol{position:absolute;right:16px;top:16px;display:flex;flex-direction:column;gap:10px;width:310px;max-width:calc(100% - 32px);max-height:calc(100% - 92px);overflow:auto;touch-action:pan-y}
+.rightcol.wide{width:440px}
+.rightcol .card{position:static}
+.sheet{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
+.sheet h3{margin:0;font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sheet h3 button{height:30px;padding:0 10px;font-size:12px}
+.sheet h4{margin:4px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.dgroup{display:flex;flex-direction:column;gap:6px}
+.dgroup .seg{display:flex}
+.dgroup .seg button{flex:1;justify-content:center;height:28px;padding:0 4px;font-size:12px}
+.mono{font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.sheet .field{grid-template-columns:96px 1fr 52px}
+.note{margin:0;font-size:12px;color:var(--muted);line-height:1.45;border-top:1px solid var(--line);padding-top:10px}
+.help{margin:0;font-size:12px;color:var(--muted);line-height:1.45}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.row button{height:32px;font-size:13px}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.status{font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;background:var(--accent-soft)}
+
+/* tooth table */
+.ttable{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.ttable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:4px 4px;border-bottom:1px solid var(--line)}
+.ttable td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ttable td.w{font-family:var(--mono);text-align:right}
+.ttable select{height:28px;padding:0 4px;font-size:12px;border-radius:6px;font-family:var(--mono)}
+.ttable button{height:28px;padding:0 8px;font-size:12px}
+.ttable tr.sel{background:var(--accent-soft)}
+.badge{font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.badge.man{border-color:var(--accent);color:var(--accent)}
+
+/* analysis */
+.atable{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.atable th,.atable td{padding:4px 6px;border-bottom:1px solid var(--line);text-align:right}
+.atable th:first-child,.atable td:first-child{text-align:left}
+.atable th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+.atable td{font-family:var(--mono)}
+.atable td:first-child{font-family:var(--sans)}
+.scroll-x{overflow-x:auto}
+.verdict{font-size:13px;font-weight:600}
+.verdict.ok{color:var(--good)} .verdict.warn{color:var(--warn)} .verdict.bad{color:var(--bad)}
+.meter{position:relative;height:10px;border-radius:99px;background:var(--line);margin:6px 0 2px}
+.meter .band{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--good) 45%,transparent);border-radius:99px}
+.meter .mark{position:absolute;top:-4px;width:3px;height:18px;margin-left:-1.5px;background:var(--fg);border-radius:2px}
+.meter-scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.ablock{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
+.ablock:first-of-type{border-top:0;padding-top:0}
+.missing{font-size:12px;color:var(--muted);margin:0}
+
+.measures{padding:10px 12px}
+.measures h3{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.measures h3 button{height:24px;padding:0 8px;font-size:12px}
+.measures ol{margin:0;padding-left:20px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.measures p{margin:0;color:var(--muted);max-width:24ch}
+.hint{position:absolute;left:16px;bottom:72px;color:var(--muted);font-size:12px;line-height:1.5;pointer-events:none}
+.tag{position:absolute;transform:translate(-50%,-130%);background:var(--measure);color:#fff;font-family:var(--mono);font-size:12px;padding:2px 7px;border-radius:5px;pointer-events:none;white-space:nowrap}
+.tlabel{position:absolute;transform:translate(-50%,-100%);font-family:var(--mono);font-size:11px;font-weight:500;line-height:1;padding:3px 5px;border-radius:5px;background:var(--panel);color:var(--fg);border:1px solid var(--line);pointer-events:none;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.tlabel.man{border-color:var(--accent);color:var(--accent)}
+.drop{position:absolute;inset:12px;border:2px dashed var(--accent);border-radius:14px;background:color-mix(in srgb,var(--accent-soft) 85%,transparent);display:grid;place-items:center;font-size:17px;font-weight:600;text-align:center;padding:16px;z-index:6}
+.toast{position:absolute;left:50%;top:16px;transform:translateX(-50%);padding:8px 14px;max-width:calc(100% - 32px);z-index:5}
+.modebar{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);padding:6px 8px 6px 14px;display:flex;gap:10px;align-items:center;max-width:calc(100% - 32px);z-index:4}
+.modebar span{font-size:13px}
+.modebar button{height:30px;font-size:12px}
+@media (max-width:720px){
+  .lbl{display:none}
+  button,.btn{padding:0 10px}
+  .tools .gap{display:none}
+  .hint{display:none}
+  .panel{left:12px;top:12px;width:280px}
+  .rightcol,.rightcol.wide{right:12px;top:auto;bottom:68px;width:calc(100% - 24px);max-height:calc(100% - 140px)}
+}
+</style>
+
+<header class="bar">
+  <div class="brand"><b>Dental Scan Viewer</b><span id="fname">Loading…</span></div>
+  <div class="tools">
+    <label class="btn primary" title="Open upper and lower scans (STL, PLY or OBJ). Select both files together.">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 17v3h16v-3M12 4v12M7 9l5-5 5 5"/></svg>
+      <span class="lbl">Open scans</span>
+      <input id="file" type="file" accept=".stl,.ply,.obj,.mtl,.jpg,.jpeg,.png" multiple>
+    </label>
+    <div class="seg" id="jawseg" role="group" aria-label="Jaws shown">
+      <button data-j="upper" aria-pressed="false">Upper</button>
+      <button data-j="both" aria-pressed="true">Both</button>
+      <button data-j="lower" aria-pressed="false">Lower</button>
+    </div>
+    <span class="gap"></span>
+    <button id="teeth" data-sheet="tpanel" aria-pressed="false" title="Find and measure individual teeth">
+      <svg class="i" viewBox="0 0 24 24"><path d="M7 3c-2.5 0-4 2-4 4.5 0 3 1.5 4.5 2 7 .5 2.6 1 6.5 2.6 6.5 1.4 0 1.4-4 2.4-6 .4-.8 1.6-.8 2 0 1 2 1 6 2.4 6 1.6 0 2.1-3.9 2.6-6.5.5-2.5 2-4 2-7C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/></svg><span class="lbl">Teeth</span></button>
+    <button id="basebtn" data-sheet="bpanel" aria-pressed="false" title="Trim the scan and add a model base">
+      <svg class="i" viewBox="0 0 24 24"><path d="M3 15h18l-2 5H5zM6 15c0-4 2.5-8 6-8s6 4 6 8"/></svg><span class="lbl">Base</span></button>
+    <button id="analysis" data-sheet="apanel" aria-pressed="false" title="Bolton and arch analyses">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="lbl">Analysis</span></button>
+    <span class="gap"></span>
+    <button id="contacts" aria-pressed="false" title="Colour the teeth by distance to the opposing arch">
+      <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg><span class="lbl">Contacts</span></button>
+    <button id="measure" aria-pressed="false" title="Tap two points to measure">
+      <svg class="i" viewBox="0 0 24 24"><path d="M3 17 17 3l4 4L7 21z M7 13l2 2M10 10l2 2M13 7l2 2"/></svg><span class="lbl">Measure</span></button>
+    <button id="wire" aria-pressed="false" title="Show mesh triangles">
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 3 3 8v8l9 5 9-5V8z M3 8l18 8M21 8 3 16M12 3v18"/></svg><span class="lbl">Mesh</span></button>
+    <button id="display" data-sheet="dpanel" aria-pressed="false" title="Resolution, brightness and surface">
+      <svg class="i" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="lbl">Display</span></button>
+    <button id="install" hidden title="Install this app">
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M4 20h16"/></svg><span class="lbl">Install app</span></button>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <details class="card panel" id="panel" open>
+    <summary>Models <small id="mcount"></small></summary>
+    <div class="pbody">
+      <ul class="models" id="models"></ul>
+      <div class="field">
+        <label for="open">Open bite</label>
+        <input id="open" type="range" min="0" max="20" step="0.5" value="0">
+        <output id="openv" for="open">0.0 mm</output>
+      </div>
+      <div class="orient">
+        <span class="sub">Orientation</span>
+        <button id="tilt" title="Rotate 90° forward">Tilt 90°</button>
+        <button id="spin" title="Rotate 90° around the vertical axis">Turn 90°</button>
+        <button id="flip" title="Turn upside down">Flip</button>
+      </div>
+      <div class="legend" id="legend" hidden>
+        <span class="sub">Distance to opposing arch</span>
+        <ul>
+          <li><i style="background:#d7263d"></i>overlap</li>
+          <li><i style="background:#f08a24"></i>0–0.1 mm</li>
+          <li><i style="background:#efd03a"></i>0.1–0.25</li>
+          <li><i style="background:#45a85a"></i>0.25–0.5</li>
+          <li><i style="background:#3b7dd8"></i>0.5–1.0</li>
+          <li><i style="background:var(--line)"></i>over 1 mm</li>
+        </ul>
+      </div>
+    </div>
+  </details>
+
+  <div class="rightcol" id="rightcol">
+    <!-- Teeth -->
+    <section class="card sheet" id="tpanel" hidden aria-label="Teeth">
+      <h3>Teeth <button class="primary" id="tfind">Find teeth</button></h3>
+      <div class="status" id="tstatus">Finds each tooth along the arch and measures its mesiodistal width. Check the boundaries before using the numbers.</div>
+      <div class="dgroup">
+        <span class="sub">Correct the teeth</span>
+        <div class="seg" id="tedit" role="group" aria-label="Tooth editing">
+          <button data-e="off" aria-pressed="true">Off</button><button data-e="add" aria-pressed="false">Add tooth</button><button data-e="remove" aria-pressed="false">Remove</button><button data-e="separate" aria-pressed="false">Separate</button>
+        </div>
+        <p class="help" id="tedithelp">Pick a tool, then tap the model.</p>
+        <div class="row"><button id="tundo" disabled title="Remove all separation lines you added">Undo separations</button></div>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="tcolors" checked> Colour teeth</label>
+        <label class="check"><input type="checkbox" id="tlabels" checked> Tooth numbers</label>
+      </div>
+      <div class="dgroup">
+        <div class="seg" id="tjaw" role="group" aria-label="Arch shown in the table"><button data-j="upper" aria-pressed="true">Upper arch</button><button data-j="lower" aria-pressed="false">Lower arch</button></div>
+        <div id="ttable"></div>
+      </div>
+      <div class="row">
+        <button id="tswap" title="Use if right and left teeth are numbered the wrong way round">Swap right/left</button>
+        <button id="tflipocc" title="Use when a single jaw was read upside down">Flip occlusal side</button>
+      </div>
+    </section>
+
+    <!-- Base -->
+    <section class="card sheet" id="bpanel" hidden aria-label="Model base">
+      <h3>Model base</h3>
+      <div class="dgroup">
+        <span class="sub">Base shape</span>
+        <div class="seg" id="bstyle" role="group" aria-label="Base shape"><button data-s="abo" aria-pressed="true">ABO ortho</button><button data-s="rounded" aria-pressed="false">Rounded</button><button data-s="rect" aria-pressed="false">Rectangle</button></div>
+      </div>
+      <span class="sub">Trim below the biting surface</span>
+      <div class="field"><label for="trimU">Upper</label><input id="trimU" type="range" min="6" max="32" step="0.5" value="20"><output id="trimUv" for="trimU"></output></div>
+      <div class="field"><label for="trimL">Lower</label><input id="trimL" type="range" min="6" max="32" step="0.5" value="15"><output id="trimLv" for="trimL"></output></div>
+      <div class="field"><label for="bheight">Base height</label><input id="bheight" type="range" min="4" max="30" step="1" value="12"><output id="bheightv" for="bheight"></output></div>
+      <div class="field"><label for="bmargin">Margin</label><input id="bmargin" type="range" min="1" max="10" step="0.5" value="3"><output id="bmarginv" for="bmargin"></output></div>
+      <label class="check"><input type="checkbox" id="balign" checked> Line up the backs of both bases</label>
+      <div class="row">
+        <button class="primary" id="bbuild">Build base</button>
+        <button id="bremove" disabled>Remove base</button>
+        <button id="bexport">Export STL</button>
+      </div>
+      <p class="help">The blue planes show where each scan will be cut. Everything below them is removed and replaced by the base.</p>
+      <p class="note" id="bnote" hidden></p>
+    </section>
+
+    <!-- Analysis -->
+    <section class="card sheet" id="apanel" hidden aria-label="Analysis">
+      <h3>Analysis <span class="row"><button id="acopy">Copy report</button><button id="acsv">Export CSV</button></span></h3>
+      <div id="abody"></div>
+    </section>
+
+    <!-- Display -->
+    <section class="card sheet" id="dpanel" hidden aria-label="Display settings">
+      <h3>Display <button id="dauto" title="Set everything to suit the open scans">Auto for this scan</button></h3>
+      <div class="dgroup">
+        <span class="sub">Resolution</span>
+        <div class="seg" id="res" role="group" aria-label="Resolution">
+          <button data-r="auto">Auto</button><button data-r="low">Low</button><button data-r="standard">Std</button><button data-r="high">High</button><button data-r="ultra">Ultra</button>
+        </div>
+        <span class="mono" id="resinfo"></span>
+      </div>
+      <div class="field"><label for="bright">Brightness</label><input id="bright" type="range" min="0.35" max="1.8" step="0.05"><output id="brightv" for="bright"></output></div>
+      <div class="field"><label for="contrast">Contrast</label><input id="contrast" type="range" min="0" max="1" step="0.05"><output id="contrastv" for="contrast"></output></div>
+      <div class="dgroup">
+        <span class="sub">Surface</span>
+        <div class="seg" id="surface" role="group" aria-label="Surface"><button data-s="matte">Matte</button><button data-s="satin">Satin</button><button data-s="gloss">Gloss</button></div>
+      </div>
+      <div class="dgroup">
+        <span class="sub">Shading</span>
+        <div class="seg" id="shading" role="group" aria-label="Shading"><button data-h="smooth">Smooth</button><button data-h="flat">Flat facets</button></div>
+      </div>
+      <p class="note" id="dnote"></p>
+    </section>
+
+    <div class="card measures" id="measures" hidden>
+      <h3>Distances <button id="clear">Clear</button></h3>
+      <ol id="mlist"></ol>
+      <p id="mhelp">Tap two points on the model.</p>
+    </div>
+  </div>
+
+  <div class="hint">Drag to rotate · Right-drag or two fingers to pan<br>Scroll or pinch to zoom · Drop files anywhere</div>
+  <div class="card modebar" id="modebar" hidden><span id="modetext"></span><button id="modecancel">Cancel</button></div>
+  <nav class="card views" aria-label="Standard views">
+    <button data-v="front">Front</button><button data-v="right">Right</button><button data-v="left">Left</button><button data-v="back">Lingual</button>
+    <span class="sep"></span>
+    <button data-v="upperOcc">Upper occlusal</button><button data-v="lowerOcc">Lower occlusal</button>
+  </nav>
+  <div class="drop" id="drop" hidden>Drop upper and lower scans together<br>STL, PLY or OBJ (with its texture image, if it has one)</div>
+  <div class="card toast" id="toast" hidden></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+<script>
+// OrthoCore: geometry for tooth segmentation, model bases and arch analysis.
+// Pure JavaScript (no three.js), works on flat Float32Array positions so it can be tested outside the browser.
+(function(root){
+'use strict';
+
+// ---------------- vector helpers ----------------
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+const mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const len=a=>Math.hypot(a[0],a[1],a[2]);
+const nrm=a=>{const l=len(a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+const dist=(a,b)=>len(sub(a,b));
+function quantile(arr,q){
+  const a=Float64Array.from(arr).sort(); if(!a.length) return NaN;
+  return a[Math.min(a.length-1,Math.max(0,Math.round(q*(a.length-1))))];
+}
+function sampleIdx(n,max){ const step=Math.max(1,Math.floor(n/max)); const out=[]; for(let i=0;i<n;i+=step) out.push(i); return out; }
+
+// symmetric 3x3 eigen decomposition (Jacobi)
+function eigSym3(A){
+  const a=A.map(r=>r.slice()), v=[[1,0,0],[0,1,0],[0,0,1]];
+  for(let sweep=0;sweep<60;sweep++){
+    if(Math.abs(a[0][1])+Math.abs(a[0][2])+Math.abs(a[1][2])<1e-12) break;
+    for(const [p,q] of [[0,1],[0,2],[1,2]]){
+      if(Math.abs(a[p][q])<1e-18) continue;
+      const th=(a[q][q]-a[p][p])/(2*a[p][q]);
+      const t=(th>=0?1:-1)/(Math.abs(th)+Math.sqrt(th*th+1));
+      const c=1/Math.sqrt(t*t+1), s=t*c;
+      for(let k=0;k<3;k++){ const kp=a[k][p],kq=a[k][q]; a[k][p]=c*kp-s*kq; a[k][q]=s*kp+c*kq; }
+      for(let k=0;k<3;k++){ const pk=a[p][k],qk=a[q][k]; a[p][k]=c*pk-s*qk; a[q][k]=s*pk+c*qk; }
+      for(let k=0;k<3;k++){ const kp=v[k][p],kq=v[k][q]; v[k][p]=c*kp-s*kq; v[k][q]=s*kp+c*kq; }
+    }
+  }
+  return {vals:[a[0][0],a[1][1],a[2][2]], vecs:[0,1,2].map(i=>[v[0][i],v[1][i],v[2][i]])};
+}
+
+// ---------------- mesh topology ----------------
+// Merges vertices that share a position (scanner files often split them along seams).
+function weld(pos,index){
+  const n=pos.length/3, map=new Map(), remap=new Uint32Array(n), out=[];
+  for(let i=0;i<n;i++){
+    const k=Math.round(pos[3*i]*2000)+'_'+Math.round(pos[3*i+1]*2000)+'_'+Math.round(pos[3*i+2]*2000);
+    let j=map.get(k);
+    if(j===undefined){ j=out.length/3; map.set(k,j); out.push(pos[3*i],pos[3*i+1],pos[3*i+2]); }
+    remap[i]=j;
+  }
+  const nt=index?index.length/3:n/3, T=new Uint32Array(nt*3); let m=0;
+  for(let t=0;t<nt;t++){
+    const a=remap[index?index[3*t]:3*t], b=remap[index?index[3*t+1]:3*t+1], c=remap[index?index[3*t+2]:3*t+2];
+    if(a===b||b===c||a===c) continue;
+    T[m++]=a; T[m++]=b; T[m++]=c;
+  }
+  return {V:Float32Array.from(out), T:T.slice(0,m), remap};
+}
+function boundaryVertexSet(nv,T){
+  const cnt=new Map();
+  for(let t=0;t<T.length;t+=3) for(let e=0;e<3;e++){
+    const a=T[t+e], b=T[t+(e+1)%3], k=a<b?a*nv+b:b*nv+a; cnt.set(k,(cnt.get(k)||0)+1);
+  }
+  const out=new Set();
+  for(const [k,c] of cnt) if(c===1){ out.add(Math.floor(k/nv)); out.add(k%nv); }
+  return out;
+}
+
+// ---------------- jaw frame ----------------
+// Frame axes: ey = occlusal direction (towards the opposing teeth), ez = anterior (towards the incisors), ex = ey × ez.
+// For a lower jaw ex points to the patient's left; for an upper jaw it points to the patient's right.
+function makeFrame(o,ey,ez){ ey=nrm(ey); ez=nrm(sub(ez,mul(ey,dot(ez,ey)))); return {o,ex:cross(ey,ez),ey,ez}; }
+function toLocal(f,p){ const d=sub(p,f.o); return [dot(d,f.ex),dot(d,f.ey),dot(d,f.ez)]; }
+function toCase(f,l){ return add(f.o,add(mul(f.ex,l[0]),add(mul(f.ey,l[1]),mul(f.ez,l[2])))); }
+
+function centroid(V){
+  const ids=sampleIdx(V.length/3,100000); let c=[0,0,0];
+  for(const i of ids){ c[0]+=V[3*i]; c[1]+=V[3*i+1]; c[2]+=V[3*i+2]; }
+  return mul(c,1/ids.length);
+}
+function computeFrame(V,index,opts={}){
+  const c=centroid(V);
+  if(opts.axes){ // opposing jaw: same directions, but its own biting plane (upper and lower planes can differ by several degrees)
+    let ey=mul(opts.axes.ey,-1); if(opts.refine!==false) ey=occlusalPlaneNormal(V,c,ey);
+    return makeFrame(c,ey,opts.axes.ez); }
+  const ids=sampleIdx(V.length/3,100000), C=[[0,0,0],[0,0,0],[0,0,0]];
+  for(const i of ids){ const d=[V[3*i]-c[0],V[3*i+1]-c[1],V[3*i+2]-c[2]];
+    for(let a=0;a<3;a++) for(let b=0;b<3;b++) C[a][b]+=d[a]*d[b]; }
+  const {vals,vecs}=eigSym3(C);
+  let ey=nrm(vecs[vals.indexOf(Math.min(...vals))]);
+  if(opts.upHint){ if(dot(ey,opts.upHint)<0) ey=mul(ey,-1); }
+  else{
+    // Gingival side: where the scan's open edges are; for closed models, the flat base.
+    const w=weld(V,index), bset=boundaryVertexSet(w.V.length/3,w.T);
+    if(bset.size>=30){
+      let bc=[0,0,0]; for(const i of bset){ bc[0]+=w.V[3*i]; bc[1]+=w.V[3*i+1]; bc[2]+=w.V[3*i+2]; }
+      bc=mul(bc,1/bset.size);
+      if(dot(sub(bc,c),ey)>0) ey=mul(ey,-1);
+    }else{
+      const nv=w.V.length/3, H=new Float32Array(nv);
+      for(let i=0;i<nv;i++) H[i]=(w.V[3*i]-c[0])*ey[0]+(w.V[3*i+1]-c[1])*ey[1]+(w.V[3*i+2]-c[2])*ey[2];
+      let hmin=Infinity,hmax=-Infinity; for(const h of H){ if(h<hmin)hmin=h; if(h>hmax)hmax=h; }
+      let aTop=0,aBot=0;
+      for(let t=0;t<w.T.length;t+=3){
+        const a=w.T[t],b=w.T[t+1],d=w.T[t+2];
+        const ar=len(cross(sub([w.V[3*b],w.V[3*b+1],w.V[3*b+2]],[w.V[3*a],w.V[3*a+1],w.V[3*a+2]]),sub([w.V[3*d],w.V[3*d+1],w.V[3*d+2]],[w.V[3*a],w.V[3*a+1],w.V[3*a+2]])));
+        if(H[a]>hmax-1&&H[b]>hmax-1&&H[d]>hmax-1) aTop+=ar;
+        if(H[a]<hmin+1&&H[b]<hmin+1&&H[d]<hmin+1) aBot+=ar;
+      }
+      if(aTop>aBot) ey=mul(ey,-1);
+    }
+  }
+  if(opts.flip) ey=mul(ey,-1);
+  if(opts.refine!==false) ey=occlusalPlaneNormal(V,c,ey);
+  return makeFrame(c,ey,findAnterior(V,c,ey));
+}
+// Tilts the occlusal direction so it is perpendicular to the plane through the cusp tips
+// (the whole-model shape, palate included, is often tipped several degrees from it).
+function occlusalPlaneNormal(V,c,ey){
+  const u=nrm(cross(ey,Math.abs(ey[0])<0.9?[1,0,0]:[0,1,0])), w=cross(ey,u);
+  const ids=sampleIdx(V.length/3,150000), NB=96;
+  const bins=Array.from({length:NB},()=>[]);
+  for(const i of ids){ const d=[V[3*i]-c[0],V[3*i+1]-c[1],V[3*i+2]-c[2]]; const a=dot(d,u),b=dot(d,w),h=dot(d,ey);
+    const k=Math.min(NB-1,Math.floor((Math.atan2(b,a)+Math.PI)/(2*Math.PI)*NB)); bins[k].push([a,b,h]); }
+  let P=[];
+  for(const B of bins){ if(B.length<30) continue; B.sort((p,q)=>p[2]-q[2]); P.push(B[Math.floor(0.995*(B.length-1))]); }
+  if(P.length<12) return ey;
+  let a=0,b=0,c0=0, use=P;
+  for(let it=0;it<6;it++){
+    // least squares h = a*x + b*y + c0
+    let S=[[0,0,0],[0,0,0],[0,0,0]], r=[0,0,0];
+    for(const p of use){ const v=[p[0],p[1],1]; for(let i=0;i<3;i++){ r[i]+=v[i]*p[2]; for(let j=0;j<3;j++) S[i][j]+=v[i]*v[j]; } }
+    const sol=solve3(S,r); if(!sol) break; [a,b,c0]=sol;
+    const res=P.map(p=>p[2]-(a*p[0]+b*p[1]+c0)), tol=it<2?3:1.5;
+    const next=P.filter((p,k)=>res[k]>-tol&&res[k]<tol+1);
+    if(next.length<10) break; use=next;
+  }
+  const n=nrm(add(ey,add(mul(u,-a),mul(w,-b))));
+  return dot(n,ey)>Math.cos(25*Math.PI/180)?n:ey;
+}
+function solve3(A,b){
+  const m=A.map((r,i)=>[...r,b[i]]);
+  for(let i=0;i<3;i++){ let p=i; for(let k=i+1;k<3;k++) if(Math.abs(m[k][i])>Math.abs(m[p][i])) p=k; [m[i],m[p]]=[m[p],m[i]];
+    if(Math.abs(m[i][i])<1e-9) return null;
+    for(let k=0;k<3;k++) if(k!==i){ const f=m[k][i]/m[i][i]; for(let j=i;j<4;j++) m[k][j]-=f*m[i][j]; } }
+  return [m[0][3]/m[0][0],m[1][3]/m[1][1],m[2][3]/m[2][2]];
+}
+// The arch is a horseshoe: seen from its middle, the open (posterior) side has no teeth.
+function findAnterior(V,c,ey){
+  const u=nrm(cross(ey,Math.abs(ey[0])<0.9?[1,0,0]:[0,1,0])), w=cross(ey,u);
+  const ids=sampleIdx(V.length/3,150000), H=[];
+  for(const i of ids) H.push((V[3*i]-c[0])*ey[0]+(V[3*i+1]-c[1])*ey[1]+(V[3*i+2]-c[2])*ey[2]);
+  const top=quantile(H,0.997);
+  const A=[],B=[];
+  ids.forEach((i,k)=>{ if(H[k]>top-6){ const d=[V[3*i]-c[0],V[3*i+1]-c[1],V[3*i+2]-c[2]]; A.push(dot(d,u)); B.push(dot(d,w)); }});
+  const ca=A.reduce((s,x)=>s+x,0)/A.length, cb=B.reduce((s,x)=>s+x,0)/B.length;
+  const NB=72, h=new Float64Array(NB);
+  for(let k=0;k<A.length;k++){ const ang=Math.atan2(B[k]-cb,A[k]-ca); h[Math.min(NB-1,Math.floor((ang+Math.PI)/(2*Math.PI)*NB))]++; }
+  const hs=new Float64Array(NB);
+  for(let b=0;b<NB;b++){ let s=0; for(let k=-2;k<=2;k++) s+=h[(b+k+NB)%NB]; hs[b]=s; }
+  let mn=0; for(let b=1;b<NB;b++) if(hs[b]<hs[mn]) mn=b;
+  const mx=Math.max(...hs), thr=hs[mn]+0.12*(mx-hs[mn]);
+  let l=0,r=0; while(l<NB/2&&hs[(mn-l-1+NB)%NB]<=thr) l++; while(r<NB/2&&hs[(mn+r+1)%NB]<=thr) r++;
+  const midBin=mn+(r-l)/2, post=(midBin+0.5)/NB*2*Math.PI-Math.PI, ant=post+Math.PI;
+  return add(mul(u,Math.cos(ant)),mul(w,Math.sin(ant)));
+}
+
+// ---------------- smoothing helpers for profiles ----------------
+function fillNaN(a){
+  const n=a.length; let last=-1;
+  for(let i=0;i<n;i++){
+    if(!isNaN(a[i])){
+      if(last<0) for(let j=0;j<i;j++) a[j]=a[i];
+      else for(let j=last+1;j<i;j++) a[j]=a[last]+(a[i]-a[last])*(j-last)/(i-last);
+      last=i;
+    }
+  }
+  if(last>=0) for(let j=last+1;j<n;j++) a[j]=a[last];
+  return a;
+}
+function movAvg(a,r){ const n=a.length,o=new Float64Array(n); for(let i=0;i<n;i++){ let s=0,c=0; for(let k=Math.max(0,i-r);k<=Math.min(n-1,i+r);k++){ s+=a[k]; c++; } o[i]=s/c; } return o; }
+function movMax(a,r){ const n=a.length,o=new Float64Array(n); for(let i=0;i<n;i++){ let m=-Infinity; for(let k=Math.max(0,i-r);k<=Math.min(n-1,i+r);k++) if(a[k]>m) m=a[k]; o[i]=m; } return o; }
+function movMed(a,r){ const n=a.length,o=new Float64Array(n); for(let i=0;i<n;i++){ const w=[]; for(let k=Math.max(0,i-r);k<=Math.min(n-1,i+r);k++) w.push(a[k]); w.sort((x,y)=>x-y); o[i]=w[w.length>>1]; } return o; }
+
+// ---------------- tooth segmentation ----------------
+// Typical mesiodistal widths (mm) by tooth position 1-8, used as a guide when placing boundaries.
+const PRIOR={upper:[8.6,6.6,7.6,7.0,6.6,10.2,9.3,8.8], lower:[5.3,5.8,6.8,7.0,7.2,11.1,10.4,10.3]};
+const SEQS=[
+  {seq:[1,2,3,4,5,6,7],pen:0}, {seq:[1,2,3,4,5,6],pen:0.6}, {seq:[1,2,3,4,5,6,7,8],pen:0.6},
+  {seq:[1,2,3,5,6,7],pen:1.0}, {seq:[1,2,3,5,6,7,8],pen:1.6}, {seq:[1,2,3,4,5],pen:2.0}
+];
+const BIN=0.25, DS=0.25;
+
+function segmentJaw(Vraw,index,frame,jaw,opts={}){
+  const wd=weld(Vraw,index), V=wd.V, n=V.length/3, f=frame;
+  const X=new Float32Array(n),H=new Float32Array(n),Z=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const dx=V[3*i]-f.o[0],dy=V[3*i+1]-f.o[1],dz=V[3*i+2]-f.o[2];
+    X[i]=dx*f.ex[0]+dy*f.ex[1]+dz*f.ex[2]; H[i]=dx*f.ey[0]+dy*f.ey[1]+dz*f.ey[2]; Z[i]=dx*f.ez[0]+dy*f.ez[1]+dz*f.ez[2];
+  }
+  const sid=sampleIdx(n,200000);
+  const top=quantile(sid.map(i=>H[i]),0.997);
+  const BAND=10;
+  const band=[]; for(let i=0;i<n;i++) if(H[i]>top-BAND) band.push(i);
+  if(band.length<200) throw new Error('Too few points near the biting surface. Check the occlusal side (Flip occlusal side).');
+  const bs=sampleIdx(band.length,100000).map(k=>band[k]);
+  const x01=quantile(bs.map(i=>X[i]),0.01), x99=quantile(bs.map(i=>X[i]),0.99);
+  const z01=quantile(bs.map(i=>Z[i]),0.01), z99=quantile(bs.map(i=>Z[i]),0.99);
+  const cx=(x01+x99)/2, cz=z01+0.4*(z99-z01);
+  const topo=buildTopology(V,wd.T), Kc=concavity(V,topo);
+  // scan colour, when there is any: enamel is pale, gum is pink, and the colour edge is the gingival margin
+  const mask=opts.colors?enamelMask(n,topo,opts.colors,wd.remap,V):null;
+  // per-vertex hue (yellow 0 .. pink 1) and brightness, for checking each tooth against its own crown colour
+  let hueV=null, lumV=null;
+  if(mask){ hueV=new Float32Array(n); lumV=new Float32Array(n); const c=new Uint16Array(n), C=opts.colors;
+    for(let i=0;i<wd.remap.length;i++){ const j=wd.remap[i], r=C[3*i], g=C[3*i+1], b=C[3*i+2]; hueV[j]+=(r-g)/Math.max(r-b,0.08*r,0.01); lumV[j]+=(r+g+b)/3; c[j]++; }
+    for(let i=0;i<n;i++) if(c[i]){ hueV[i]/=c[i]; lumV[i]/=c[i]; } }
+  const crownPts=mask?band.filter(i=>mask[i]):band;
+
+  // 1. arch curve through the middle of the crowns: in each 0.5° direction from the arch centre, take the points
+  //    within 4 mm of the highest crown level in that direction and use the middle of their radial spread.
+  //    Directions whose highest level is well below the rest of the dentition (gum behind the last molars) are left out.
+  const NB=720, NW=8, binOf=new Int32Array(crownPts.length), cnt=new Uint32Array(NB);
+  for(let k=0;k<crownPts.length;k++){ const i=crownPts[k]; const ph=Math.atan2(X[i]-cx,Z[i]-cz); const b=Math.min(NB-1,Math.floor((ph+Math.PI)/(2*Math.PI)*NB)); binOf[k]=b; cnt[b]++; }
+  const off=new Uint32Array(NB+1); for(let b=0;b<NB;b++) off[b+1]=off[b]+cnt[b];
+  const fillp=off.slice(0,NB), order=new Uint32Array(crownPts.length);
+  for(let k=0;k<crownPts.length;k++) order[fillp[binOf[k]]++]=k;
+  const binTop=new Float64Array(NB).fill(NaN);
+  for(let b=0;b<NB;b++){ // highest crown level over a 4° window, robust to single spikes
+    const hs=[]; for(let q=-NW;q<=NW;q++){ const bb=(b+q+NB)%NB; for(let e=off[bb];e<off[bb+1];e++) hs.push(H[crownPts[order[e]]]); }
+    if(hs.length>=20){ hs.sort((x,y)=>x-y); binTop[b]=hs[Math.floor(0.98*(hs.length-1))]; }
+  }
+  const validTops=Array.from(binTop).filter(x=>!isNaN(x)), refTop=validTops.length?quantile(validTops,0.75):top;
+  const med=new Float64Array(NB).fill(NaN);
+  for(let b=0;b<NB;b++){
+    if(isNaN(binTop[b])||binTop[b]<refTop-6) continue;
+    const r=[]; for(let e=off[b];e<off[b+1];e++){ const i=crownPts[order[e]]; if(mask||H[i]>binTop[b]-4) r.push(Math.hypot(X[i]-cx,Z[i]-cz)); }
+    if(r.length<5) continue; r.sort((x,y)=>x-y);
+    med[b]=(r[Math.floor(0.1*(r.length-1))]+r[Math.floor(0.9*(r.length-1))])/2;
+  }
+  // longest run of valid directions through the front of the arch. Gaps are bridged by their length along the arch:
+  // a space between two teeth (spacing, an extraction space) is crossed, the open back of the horseshoe is not.
+  // Without scan colour, only short gaps (4°) are crossed, as before.
+  const mid=NB/2; let lo=mid, hi=mid;
+  if(isNaN(med[mid])){ let k=1; while(k<60&&isNaN(med[mid-k])&&isNaN(med[mid+k])) k++; lo=hi=isNaN(med[mid-k])?mid+k:mid-k; }
+  const GAPMM=mask?9:0, dA=2*Math.PI/NB;
+  const extend=(start,dir)=>{ let b=start,gap=0,last=start; while(b+dir>=0&&b+dir<NB){ b+=dir; if(isNaN(med[b])){ ++gap; if(gap>8&&gap*dA*med[last]>GAPMM) break; } else { gap=0; last=b; } } return last; };
+  lo=extend(lo,-1); hi=extend(hi,1);
+  let R=Array.from(med.slice(lo,hi+1)); fillNaN(R); R=movAvg(movMed(R,8),16);
+  const poly=[]; for(let k=0;k<R.length;k++){ const ph=((lo+k+0.5)/NB)*2*Math.PI-Math.PI; poly.push([cx+R[k]*Math.sin(ph),cz+R[k]*Math.cos(ph)]); }
+  // resample by arc length
+  const cum=[0]; for(let k=1;k<poly.length;k++) cum.push(cum[k-1]+Math.hypot(poly[k][0]-poly[k-1][0],poly[k][1]-poly[k-1][1]));
+  const total=cum[cum.length-1], NC=Math.floor(total/DS)+1;
+  const CX=new Float64Array(NC),CZ=new Float64Array(NC),TX=new Float64Array(NC),TZ=new Float64Array(NC),NX=new Float64Array(NC),NZ=new Float64Array(NC),CPH=new Float64Array(NC);
+  for(let j=0,k=0;j<NC;j++){
+    const s=j*DS; while(k<cum.length-2&&cum[k+1]<s) k++;
+    const t=(s-cum[k])/Math.max(1e-9,cum[k+1]-cum[k]);
+    CX[j]=poly[k][0]+(poly[k+1][0]-poly[k][0])*t; CZ[j]=poly[k][1]+(poly[k+1][1]-poly[k][1])*t;
+    CPH[j]=Math.atan2(CX[j]-cx,CZ[j]-cz);
+  }
+  for(let j=0;j<NC;j++){
+    const a=Math.max(0,j-4),b=Math.min(NC-1,j+4); let tx=CX[b]-CX[a],tz=CZ[b]-CZ[a]; const l=Math.hypot(tx,tz)||1; tx/=l; tz/=l;
+    TX[j]=tx; TZ[j]=tz; let nx=tz,nz=-tx; if(nx*(CX[j]-cx)+nz*(CZ[j]-cz)<0){ nx=-nx; nz=-nz; } NX[j]=nx; NZ[j]=nz;
+  }
+  // direction -> curve index lookup
+  const LUTN=1440, lut=new Int32Array(LUTN);
+  for(let q=0,j=0;q<LUTN;q++){ const ph=(q+0.5)/LUTN*2*Math.PI-Math.PI; while(j<NC-1&&CPH[j+1]<=ph) j++; lut[q]=j; }
+  const phMin=CPH[0], phMax=CPH[NC-1];
+
+  const st={jaw,frame:f,n,V,remap:wd.remap,X,H,Z,top,cx,cz,NC,CX,CZ,TX,TZ,NX,NZ,CPH,lut,phMin,phMax,total,topo,K:Kc,mask,hueV,lumV};
+  // 2. project every point onto the curve (s = position along the arch, d = buccal(+)/lingual(-) offset)
+  const S=new Float32Array(n), D=new Float32Array(n);
+  for(let i=0;i<n;i++){ const r=project(st,X[i],Z[i]); S[i]=r?r.s:-1; D[i]=r?r.d:0; }
+  st.band=Uint32Array.from(band); st.S=S; st.D=D;
+
+  // 3. profiles along the arch
+  const nb=Math.ceil(total/BIN)+1, topH=new Float64Array(nb).fill(NaN);
+  for(const i of band){ if(S[i]<0||Math.abs(D[i])>7) continue; const b=Math.floor(S[i]/BIN), h=H[i]; if(isNaN(topH[b])||h>topH[b]) topH[b]=h; }
+  fillNaN(topH);
+  const topS=movAvg(topH,1);
+  const E=movAvg(movMax(topS,10),6);
+  const dmin=new Float64Array(nb).fill(Infinity), dmax=new Float64Array(nb).fill(-Infinity), dc=new Uint32Array(nb);
+  for(const i of band){ if(S[i]<0||Math.abs(D[i])>7) continue; const b=Math.floor(S[i]/BIN), h=H[i];
+    if(h<E[b]-3.5||h>E[b]-0.8) continue; dc[b]++; if(D[i]<dmin[b]) dmin[b]=D[i]; if(D[i]>dmax[b]) dmax[b]=D[i]; }
+  const wid=new Float64Array(nb); for(let b=0;b<nb;b++) wid[b]=dc[b]>=3?dmax[b]-dmin[b]:NaN; fillNaN(wid);
+  const widS=movAvg(wid,1), widEnv=movAvg(movMax(widS,12),6);
+  let cost=new Float64Array(nb); for(let b=0;b<nb;b++) cost[b]=0.5*(topS[b]-E[b])/1.5+0.5*(widS[b]-widEnv[b])/2.0;
+  cost=movAvg(cost,1);
+  // with colour: between two teeth the gum papillae reach in towards the arch line from both sides
+  if(mask){
+    const rb=new Float64Array(nb).fill(6), rl=new Float64Array(nb).fill(6);
+    for(let i=0;i<n;i++){ if(mask[i]||S[i]<0) continue; const b=Math.floor(S[i]/BIN); if(b>=nb||H[i]<E[b]-5.5) continue; const d=D[i];
+      if(d>=0&&d<rb[b]) rb[b]=d; else if(d<0&&-d<rl[b]) rl[b]=-d; }
+    const reach=movAvg(Array.from(rb,(v,b)=>(v+rl[b])/2),2);
+    st.reach=reach;
+    for(let b=0;b<nb;b++) cost[b]=0.5*cost[b]-Math.min(1.5,Math.max(0,(4.2-reach[b])/1.6));
+  }
+  st.E=E; st.topS=topS; st.cost=cost; st.nb=nb;
+
+  // 4. extent of the dentition (where crowns reach near the local biting level)
+  const rm=movMax(topS,40), isT=new Uint8Array(nb); for(let b=0;b<nb;b++) isT[b]=topS[b]>rm[b]-3.0?1:0;
+  let best=[0,-1],cur=null,gap=0;
+  for(let b=0;b<nb;b++){
+    if(isT[b]){ if(!cur) cur=[b,b]; cur[1]=b; gap=0; }
+    else if(cur){ if(++gap>20){ if(cur[1]-cur[0]>best[1]-best[0]) best=cur; cur=null; gap=0; } }
+  }
+  if(cur&&cur[1]-cur[0]>best[1]-best[0]) best=cur;
+  let sStart=best[0]*BIN, sEnd=(best[1]+1)*BIN;
+  // trim smooth gum (tuberosity, retromolar pad) off the ends: crowns carry cusps and fissures, gum does not
+  { const kb=[]; for(let k=0;k<band.length;k+=Math.max(1,Math.floor(band.length/40000))) kb.push(Math.abs(st.K[band[k]]));
+    st.kScale=Math.max(1e-4,quantile(kb,0.75)); }
+  const smooth=(a,b)=>{ let ke=0,kc=0,strong=0;
+    for(const i of band){ const s0=S[i]; if(s0<a||s0>=b||Math.abs(D[i])>5||H[i]<E[Math.floor(s0/BIN)]-2.5) continue;
+      const k=Math.abs(st.K[i])/st.kScale; ke+=k; kc++; if(k>2) strong++; }
+    return kc<30||(ke/kc<0.55&&strong/kc<0.006); };
+  // scan colour, when there is any: enamel is pale, gum is pink. The colour edge is the gingival margin.
+  if(st.mask){
+    const ss=[]; for(const i of band) if(st.mask[i]&&S[i]>=0&&Math.abs(D[i])<6) ss.push(S[i]);
+    if(ss.length>500){ sStart=Math.max(0,quantile(ss,0.001)-0.3); sEnd=Math.min(total,quantile(ss,0.999)+0.3); }
+  }else{
+    while(sEnd-sStart>30&&smooth(sEnd-3,sEnd)) sEnd-=1;
+    while(sEnd-sStart>30&&smooth(sStart,sStart+3)) sStart+=1;
+  }
+  // midline: curve point straight in front of the arch centre
+  let jm=0; for(let j=0;j<NC;j++) if(Math.abs(CPH[j])<Math.abs(CPH[jm])) jm=j;
+  // The arch centre above is pulled to one side when the scan reaches further back on one side. The frame origin
+  // (centre of the whole scan, palate and gum included) is not, so take the curve point straight in front of it.
+  let jo=-1; for(let j=0;j<NC;j++){ if(CZ[j]<=0) continue; if(jo<0||Math.abs(Math.atan2(CX[j],CZ[j]))<Math.abs(Math.atan2(CX[jo],CZ[jo]))) jo=j; }
+  const sMid=(jo>=0?jo:jm)*DS;
+  st.sStart=sStart; st.sEnd=sEnd; st.sMid0=sMid; st.sMidCentre=jm*DS;
+
+  // 5. candidate boundaries: local minima of the cost
+  const cands=[];
+  for(let b=Math.ceil(sStart/BIN)+4;b<Math.floor(sEnd/BIN)-4;b++){
+    let isMin=true; for(let k=-4;k<=4&&isMin;k++) if(k&&cost[b+k]<cost[b]) isMin=false;
+    // with colour, a gap between teeth always has gum reaching in towards it
+    if(isMin&&cost[b]<-0.08) cands.push({s:(b+0.5)*BIN,c:Math.max(cost[b],-1.6)});
+  }
+  st.cands=cands;
+
+  // 6. dynamic programming: choose boundaries that best match typical tooth sizes
+  const pri=PRIOR[jaw==='upper'?'upper':'lower'];
+  const K=[{s:sStart,c:0},...cands,{s:sEnd,c:0}], m=K.length;
+  let bestSol=null;
+  // teeth vary in size from person to person: try the typical sizes scaled up and down together
+  for(const scl of [0.9,0.96,1.02,1.08,1.14,1.2]) for(const A of SEQS) for(const Bq of SEQS){
+    const labs=[...A.seq.slice().reverse(),...Bq.seq], nT=labs.length, nA=A.seq.length;
+    const W=labs.map(u=>pri[u-1]*scl);
+    const dp=Array.from({length:nT+1},()=>new Float64Array(m).fill(Infinity));
+    const bk=Array.from({length:nT+1},()=>new Int32Array(m).fill(-1));
+    dp[0][0]=0;
+    for(let t=1;t<=nT;t++){
+      const Wt=W[t-1], sig=0.15*Wt+0.4;
+      for(let j=1;j<m;j++){
+        if(t<nT&&j===m-1) continue; if(t===nT&&j!==m-1) continue;
+        // the midline contact: near the estimate, more costly the further it is from it
+        if(t===nA&&Math.abs(K[j].s-sMid)>6.5) continue;
+        let bv=t===nA?0.5*((K[j].s-sMid)/3)**2:0, bi=-1; const base=bv; bv=Infinity;
+        for(let i=j-1;i>=0;i--){
+          const w=K[j].s-K[i].s; if(w>1.8*Wt) break; if(w<0.45*Wt||dp[t-1][i]===Infinity) continue;
+          const v=dp[t-1][i]+0.35*((w-Wt)/sig)**2+K[j].c+base;
+          if(v<bv){ bv=v; bi=i; }
+        }
+        dp[t][j]=bv; bk[t][j]=bi;
+      }
+    }
+    const tot=dp[nT][m-1]+A.pen+Bq.pen+8*Math.log(scl)**2;
+    if(tot<(bestSol?bestSol.cost:Infinity)){
+      const bounds=[]; let j=m-1; for(let t=nT;t>=1;t--){ bounds.push(K[j].s); j=bk[t][j]; } bounds.push(K[0].s); bounds.reverse();
+      bestSol={cost:tot,bounds,nA,seqA:A.seq,seqB:Bq.seq};
+    }
+  }
+  if(!bestSol){ // fallback: share the dentition out by typical sizes
+    const labs=[7,6,5,4,3,2,1,1,2,3,4,5,6,7], W=labs.map(u=>pri[u-1]), sc=(sEnd-sStart)/W.reduce((a,b)=>a+b,0);
+    const bounds=[sStart]; for(const w of W) bounds.push(bounds[bounds.length-1]+w*sc);
+    bestSol={bounds,nA:7,seqA:[1,2,3,4,5,6,7],seqB:[1,2,3,4,5,6,7]};
+  }
+  st.bounds=bestSol.bounds; st.seqA=bestSol.seqA; st.seqB=bestSol.seqB;
+  st.swap=!!opts.swapSides; st.manual={}; st.barriers=[];
+  st.midS=st.bounds[bestSol.nA];
+  // 7. grow each tooth from a seed in the middle of its crown; growth is slowed in concave valleys,
+  //    so neighbouring teeth and the gum meet along the gingival margin and the interproximal grooves
+  st.alpha=opts.alpha!=null?opts.alpha:3;
+  st.seeds=[]; for(let t=0;t<st.bounds.length-1;t++) st.seeds.push(seedFromInterval(st,st.bounds[t],st.bounds[t+1]));
+  st.gumSeeds=gumSeeds(st);
+  if(opts.planeOnly){ st.lab=new Int16Array(n).fill(-1); for(let i=0;i<n;i++){ const s0=S[i]; if(s0<0) continue; let k=-1; for(let t=0;t<st.bounds.length-1;t++) if(s0>=st.bounds[t]&&s0<st.bounds[t+1]){ k=t; break; } if(k>=0&&H[i]>Eat(st,s0)-6.5&&Math.abs(D[i])<6.5) st.lab[i]=k; } st.seeds.sort((a,b)=>a.s-b.s); relabel(st); computeTeeth(st); return st; }
+  refresh(st);
+  return st;
+}
+
+// nearest curve position of a point given in frame x,z
+function project(st,x,z){
+  const ph=Math.atan2(x-st.cx,z-st.cz);
+  if(ph<st.phMin-0.05||ph>st.phMax+0.05) return null;
+  const q=Math.min(1439,Math.max(0,Math.floor((ph+Math.PI)/(2*Math.PI)*1440)));
+  const j0=st.lut[q]; let bj=j0,bd=Infinity;
+  for(let j=Math.max(0,j0-24);j<=Math.min(st.NC-1,j0+24);j++){ const d=(x-st.CX[j])**2+(z-st.CZ[j])**2; if(d<bd){ bd=d; bj=j; } }
+  const px=x-st.CX[bj],pz=z-st.CZ[bj];
+  const s=bj*DS+Math.max(-DS/2,Math.min(DS/2,px*st.TX[bj]+pz*st.TZ[bj]));
+  return {s,d:px*st.NX[bj]+pz*st.NZ[bj]};
+}
+function curveAt(st,s){ const j=Math.max(0,Math.min(st.NC-1,Math.round(s/DS))); return {x:st.CX[j],z:st.CZ[j],tx:st.TX[j],tz:st.TZ[j],nx:st.NX[j],nz:st.NZ[j]}; }
+function Eat(st,s){ return st.E[Math.max(0,Math.min(st.nb-1,Math.floor(s/BIN)))]; }
+
+// FDI quadrant for each side of the midline
+function quadrants(st){
+  // low-s side: patient right for a lower jaw, patient left for an upper jaw (frame x points left on lower, right on upper)
+  let qLow=st.jaw==='upper'?2:4, qHigh=st.jaw==='upper'?1:3;
+  if(st.swap){ const t=qLow; qLow=qHigh; qHigh=t; }
+  return [qLow,qHigh];
+}
+function relabel(st){
+  const nT=st.seeds.length;
+  st.midIndex=st.seeds.filter(sd=>sd.s<st.midS).length;
+  const nA=st.midIndex, nB=nT-nA;
+  const A=(st.seqA&&st.seqA.length===nA)?st.seqA:Array.from({length:nA},(_,i)=>Math.min(8,i+1));
+  const B=(st.seqB&&st.seqB.length===nB)?st.seqB:Array.from({length:nB},(_,i)=>Math.min(8,i+1));
+  st.seqA=A; st.seqB=B;
+  const [qL,qH]=quadrants(st);
+  st.labels=[...A.slice().reverse().map(u=>qL*10+u),...B.map(u=>qH*10+u)];
+}
+
+// ---------------- mesh topology and surface concavity ----------------
+function buildTopology(V,T){
+  const n=V.length/3, N=new Float32Array(n*3);
+  for(let t=0;t<T.length;t+=3){
+    const a=T[t],b=T[t+1],c=T[t+2];
+    const ux=V[3*b]-V[3*a],uy=V[3*b+1]-V[3*a+1],uz=V[3*b+2]-V[3*a+2], vx=V[3*c]-V[3*a],vy=V[3*c+1]-V[3*a+1],vz=V[3*c+2]-V[3*a+2];
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    for(const k of [a,b,c]){ N[3*k]+=nx; N[3*k+1]+=ny; N[3*k+2]+=nz; }
+  }
+  for(let i=0;i<n;i++){ const l=Math.hypot(N[3*i],N[3*i+1],N[3*i+2])||1; N[3*i]/=l; N[3*i+1]/=l; N[3*i+2]/=l; }
+  const cnt=new Uint32Array(n); for(let t=0;t<T.length;t++) cnt[T[t]]+=2;
+  const off0=new Uint32Array(n+1); for(let i=0;i<n;i++) off0[i+1]=off0[i]+cnt[i];
+  const raw=new Uint32Array(off0[n]), fill=off0.slice(0,n);
+  for(let t=0;t<T.length;t+=3){ const a=T[t],b=T[t+1],c=T[t+2];
+    raw[fill[a]++]=b; raw[fill[a]++]=c; raw[fill[b]++]=a; raw[fill[b]++]=c; raw[fill[c]++]=a; raw[fill[c]++]=b; }
+  const off=new Uint32Array(n+1), adj=new Uint32Array(off0[n]), boundary=new Uint8Array(n); let p=0;
+  for(let i=0;i<n;i++){
+    const L=Array.from(raw.subarray(off0[i],off0[i+1])).sort((x,y)=>x-y);
+    off[i]=p;
+    for(let k=0;k<L.length;){ let r=k; while(r<L.length&&L[r]===L[k]) r++; if(r-k===1) boundary[i]=1; adj[p++]=L[k]; k=r; }
+  }
+  off[n]=p;
+  return {N,off,adj:adj.slice(0,p),boundary};
+}
+// signed curvature per vertex: negative in valleys (gingival margin, between teeth), positive on cusps and ridges
+function concavity(V,topo){
+  const n=V.length/3, {N,off,adj}=topo, K=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    let s=0,c=0;
+    for(let e=off[i];e<off[i+1];e++){ const j=adj[e];
+      const dx=V[3*j]-V[3*i],dy=V[3*j+1]-V[3*i+1],dz=V[3*j+2]-V[3*i+2], l2=dx*dx+dy*dy+dz*dz; if(l2<1e-12) continue;
+      s+=((N[3*j]-N[3*i])*dx+(N[3*j+1]-N[3*i+1])*dy+(N[3*j+2]-N[3*i+2])*dz)/l2; c++; }
+    K[i]=c?s/c:0;
+  }
+  let A=K, B=new Float32Array(n);
+  for(let pass=0;pass<2;pass++){
+    for(let i=0;i<n;i++){ let s=A[i],c=1; for(let e=off[i];e<off[i+1];e++){ s+=A[adj[e]]; c++; } B[i]=s/c; }
+    const t=A; A=B; B=t;
+  }
+  return A;
+}
+
+// ---------------- enamel / gum from scan colour ----------------
+// colours: per raw vertex rgb (0-1). Returns 1 for enamel, 0 for gum, or null when the colours do not separate the two.
+function enamelMask(n,topo,colors,remap,V){
+  const sum=new Float64Array(n), cnt=new Uint16Array(n);
+  // hue between yellow (enamel, dentine, even the yellowish neck) and pink (gum, pale gum too): (r-g)/(r-b); near-white counts as enamel
+  for(let i=0;i<remap.length;i++){ const j=remap[i], r=colors[3*i], g=colors[3*i+1], b=colors[3*i+2]; sum[j]+=(r-g)/Math.max(r-b,0.08*r,0.01); cnt[j]++; }
+  let x=new Float32Array(n); for(let i=0;i<n;i++) x[i]=cnt[i]?sum[i]/cnt[i]:0;
+  const {off,adj}=topo;
+  for(let pass=0;pass<2;pass++){ const y=new Float32Array(n); for(let i=0;i<n;i++){ let s=x[i],c=1; for(let e=off[i];e<off[i+1];e++){ s+=x[adj[e]]; c++; } y[i]=s/c; } x=y; }
+  // Otsu threshold on the redness histogram
+  let lo=Infinity,hi=-Infinity; for(let i=0;i<n;i++){ if(x[i]<lo) lo=x[i]; if(x[i]>hi) hi=x[i]; }
+  if(!(hi-lo>0.05)) return null;
+  const NBH=128, hist=new Float64Array(NBH), bw=(hi-lo)/NBH;
+  for(let i=0;i<n;i++) hist[Math.min(NBH-1,Math.floor((x[i]-lo)/bw))]++;
+  let tot=0,mu=0; for(let b=0;b<NBH;b++){ tot+=hist[b]; mu+=b*hist[b]; } mu/=tot;
+  let var0=0; for(let b=0;b<NBH;b++) var0+=hist[b]*(b-mu)**2; var0/=tot;
+  let w0=0,s0=0,bestB=-1,bestV=-1,m0=0,m1=0;
+  for(let b=0;b<NBH-1;b++){ w0+=hist[b]; s0+=b*hist[b]; const w1=tot-w0; if(w0<1||w1<1) continue;
+    const a=s0/w0, c=(mu*tot-s0)/w1, v=w0*w1*(a-c)**2/(tot*tot); if(v>bestV){ bestV=v; bestB=b; m0=a; m1=c; } }
+  // the two colours must be clearly apart (separability and a real gap between the class means)
+  if(bestB<0||bestV/var0<0.55||(m1-m0)*bw<0.07) return null;
+  // cut at the emptiest point of the histogram between the enamel peak and the gum peak
+  const hs=movAvg(Array.from(hist),2); let pe=0, pg=bestB+1;
+  for(let b=0;b<=bestB;b++) if(hs[b]>hs[pe]) pe=b;
+  for(let b=bestB+1;b<NBH;b++) if(hs[b]>hs[pg]) pg=b;
+  let vb=bestB; for(let b=pe;b<=pg;b++) if(hs[b]<hs[vb]) vb=b;
+  const th=lo+(vb+0.5)*bw;
+  const M=new Uint8Array(n); let teethCount=0; for(let i=0;i<n;i++) if(x[i]<th){ M[i]=1; teethCount++; }
+  if(teethCount<n*0.05||teethCount>n*0.8) return null;
+  // tidy: stain in a fissure becomes enamel, specks of pale palate become gum
+  const flipSmall=(val,maxSize)=>{ const seen=new Uint8Array(n), stack=[], comp=[];
+    for(let s0=0;s0<n;s0++){ if(seen[s0]||M[s0]!==val) continue; comp.length=0; stack.push(s0); seen[s0]=1;
+      while(stack.length){ const v=stack.pop(); comp.push(v); for(let e=off[v];e<off[v+1];e++){ const u=adj[e]; if(!seen[u]&&M[u]===val){ seen[u]=1; stack.push(u); } } }
+      if(comp.length<maxSize) for(const v of comp) M[v]=1-val; } };
+  // gum-coloured patches enclosed by enamel (a cavity, a stained fissure, a dark filling) belong to the tooth:
+  // only the largest gum region (or a patch touching the scan's edge) is real gum
+  { const seen=new Uint8Array(n), comps=[];
+    for(let s0=0;s0<n;s0++){ if(seen[s0]||M[s0]) continue; const comp=[s0]; seen[s0]=1; let edge=false;
+      for(let q=0;q<comp.length;q++){ const v=comp[q]; if(topo.boundary[v]) edge=true; for(let e=off[v];e<off[v+1];e++){ const u=adj[e]; if(!seen[u]&&!M[u]){ seen[u]=1; comp.push(u); } } }
+      comps.push({comp,edge}); }
+    comps.sort((a,b)=>b.comp.length-a.comp.length);
+    for(let k=1;k<comps.length;k++){ const c=comps[k]; if(!c.edge&&c.comp.length<n*0.02) for(const v of c.comp) M[v]=1; } }
+  // pale soft tissue along the cut edge of the scan (cheek, tongue side) is not enamel: clear a 2 mm strip along the edge
+  { const dist=new Float32Array(n).fill(Infinity), q=[];
+    for(let v=0;v<n;v++) if(topo.boundary[v]){ dist[v]=0; q.push(v); }
+    for(let h=0;h<q.length;h++){ const v=q[h]; for(let e=off[v];e<off[v+1];e++){ const u=adj[e];
+      const d=dist[v]+Math.hypot(V[3*u]-V[3*v],V[3*u+1]-V[3*v+1],V[3*u+2]-V[3*v+2]);
+      if(d<2&&d<dist[u]){ dist[u]=d; q.push(u); } } }
+    for(let v=0;v<n;v++) if(dist[v]<2) M[v]=0; }
+  // opening: thin pale slivers of gum (under 1 mm wide) along the margin are dropped, crowns keep their shape
+  { const R=3, E0=M.slice();
+    let cur=M.slice(); for(let r=0;r<R;r++){ const nx=cur.slice(); for(let v=0;v<n;v++) if(cur[v]) for(let e=off[v];e<off[v+1];e++) if(!cur[adj[e]]){ nx[v]=0; break; } cur=nx; }
+    for(let r=0;r<R;r++){ const nx=cur.slice(); for(let v=0;v<n;v++) if(!cur[v]&&E0[v]) for(let e=off[v];e<off[v+1];e++) if(cur[adj[e]]){ nx[v]=1; break; } cur=nx; }
+    M.set(cur); }
+  flipSmall(0,Math.max(60,Math.round(n*0.004)));
+  flipSmall(1,Math.max(60,Math.round(n*0.003)));
+  return M;
+}
+
+// ---------------- region growing from tooth seeds (concavity-weighted shortest paths) ----------------
+function grow(st){
+  const n=st.n, {off,adj}=st.topo, V=st.V, K=st.K, ks=st.kScale;
+  const dist=new Float64Array(n).fill(Infinity), lab=new Int16Array(n).fill(-2);
+  let cap=1<<16, hk=new Float64Array(cap), hv=new Int32Array(cap), hn=0;
+  const push=(k,v)=>{ if(hn===cap){ cap*=2; const a=new Float64Array(cap); a.set(hk); hk=a; const b=new Int32Array(cap); b.set(hv); hv=b; }
+    let i=hn++; while(i>0){ const p=(i-1)>>1; if(hk[p]<=k) break; hk[i]=hk[p]; hv[i]=hv[p]; i=p; } hk[i]=k; hv[i]=v; };
+  const pop=()=>{ const k=hk[0],v=hv[0]; const lk=hk[--hn], lv=hv[hn]; let i=0;
+    for(;;){ let c=2*i+1; if(c>=hn) break; if(c+1<hn&&hk[c+1]<hk[c]) c++; if(hk[c]>=lk) break; hk[i]=hk[c]; hv[i]=hv[c]; i=c; }
+    hk[i]=lk; hv[i]=lv; return [k,v]; };
+  const M=st.mask;
+  // each tooth's stretch of the arch: from the boundary search, or halfway to its neighbours for teeth added by hand
+  const nS=st.seeds.length, lo=new Float64Array(nS), hi=new Float64Array(nS);
+  for(let k=0;k<nS;k++){ const sd=st.seeds[k], pv=st.seeds[k-1], nx=st.seeds[k+1];
+    lo[k]=sd.s0!=null&&!st.seedsEdited?sd.s0:(pv?(pv.s+sd.s)/2:-Infinity); hi[k]=sd.s1!=null&&!st.seedsEdited?sd.s1:(nx?(nx.s+sd.s)/2:Infinity);
+    if(k===0) lo[k]=-Infinity; if(k===nS-1) hi[k]=Infinity; }
+  st.seeds.forEach((sd,k)=>{ for(const v of sd.verts){ if(M&&!M[v]) continue; if(dist[v]>0){ dist[v]=0; lab[v]=k; push(0,v); } } });
+  if(M){ for(let v=0;v<n;v++) if(!M[v]){ lab[v]=-1; dist[v]=0; } } // gum-coloured surface is never part of a tooth
+  else for(const v of st.gumSeeds){ if(lab[v]===-2){ dist[v]=0; lab[v]=-1; push(0,v); } }
+  const bars=st.barriers, X=st.X, Z=st.Z;
+  const blocked=(a,b)=>{ for(const br of bars){
+    const da=(X[a]-br.x)*br.tx+(Z[a]-br.z)*br.tz, db=(X[b]-br.x)*br.tx+(Z[b]-br.z)*br.tz;
+    if((da<0)!==(db<0)&&Math.hypot(X[a]-br.x,Z[a]-br.z)<br.r) return true; } return false; };
+  while(hn>0){
+    const [d,v]=pop(); if(d>dist[v]) continue;
+    for(let e=off[v];e<off[v+1];e++){
+      const u=adj[e];
+      const len=Math.hypot(V[3*u]-V[3*v],V[3*u+1]-V[3*v+1],V[3*u+2]-V[3*v+2]);
+      const kc=-(K[u]+K[v])*0.5/ks, k=lab[v], su=st.S[u];
+      // a tooth that spreads past its place along the arch gets dearer with every millimetre (keeps one tooth out of its neighbour's broken or low parts)
+      const out=(su<0||k<0)?0:Math.max(0,lo[k]-su,su-hi[k]);
+      const w=len*(1+(kc>0?st.alpha*kc*kc:0))*(1+out)*(1+out);
+      const nd=d+w; if(nd>=dist[u]) continue;
+      if(M&&!M[u]) continue;
+      if(bars.length&&blocked(v,u)) continue;
+      dist[u]=nd; lab[u]=lab[v]; push(nd,u);
+    }
+  }
+  for(let v=0;v<n;v++) if(lab[v]===-2) lab[v]=-1;
+  st.lab=lab;
+}
+
+function seedFromInterval(st,s0,s1){
+  const sc=(s0+s1)/2, half=Math.max(0.8,0.22*(s1-s0)), verts=[];
+  let best=-1,bh=-Infinity;
+  for(let i=0;i<st.n;i++){ const s=st.S[i]; if(s<0||Math.abs(s-sc)>half||Math.abs(st.D[i])>2.2) continue;
+    if(st.mask&&!st.mask[i]) continue;
+    if(st.H[i]>Eat(st,s)-2.5) verts.push(i); if(st.H[i]>bh){ bh=st.H[i]; best=i; } }
+  if(!verts.length&&best>=0) verts.push(best);
+  return {s:sc,s0,s1,verts};
+}
+function gumSeeds(st){
+  const out=[];
+  for(let i=0;i<st.n;i++){
+    const s=st.S[i];
+    if(st.topo.boundary[i]){ out.push(i); continue; }
+    if(s<0){ if(st.H[i]<st.top-12) out.push(i); continue; }
+    if(s<st.sStart-2||s>st.sEnd+2||st.H[i]<Eat(st,s)-11||Math.abs(st.D[i])>11) out.push(i);
+  }
+  return Uint32Array.from(out);
+}
+
+// ---------------- per-tooth measurements ----------------
+function computeTeeth(st){
+  const nT=st.seeds.length, f=st.frame, lab=st.lab;
+  // vertices of each tooth
+  const lists=Array.from({length:nT},()=>[]);
+  for(let i=0;i<st.n;i++){ const k=lab[i]; if(k>=0) lists[k].push(i); }
+  const info=lists.map((L,k)=>{
+    let top=-Infinity; for(const i of L) if(st.H[i]>top) top=st.H[i];
+    const crown=L.filter(i=>st.H[i]>top-7.5);
+    let sx=0,sz=0,sd=0; for(const i of crown){ sx+=st.X[i]; sz+=st.Z[i]; sd+=st.S[i]>=0?st.D[i]:0; }
+    const c=crown.length||1;
+    return {L,crown,top,cx:sx/c,cz:sz/c,dc:sd/c};
+  });
+  // contact points between neighbouring teeth: the highest point of the border they share
+  // (the marginal ridges meet there); teeth that do not touch use the closest pair of upper crown points
+  const contacts=new Array(Math.max(0,nT-1)).fill(null);
+  // (high, and close to the arch line: where one tooth has crept round its neighbour's lingual or buccal cusp, the
+  // border runs over that cusp, but the real contact is still on the line between the crowns)
+  const border=new Array(Math.max(0,nT-1)).fill(-1), borderH=new Float64Array(Math.max(0,nT-1)).fill(-Infinity), borderSc=new Float64Array(Math.max(0,nT-1)).fill(-Infinity);
+  if(st.topo){ const {off,adj}=st.topo;
+    for(let i=0;i<st.n;i++){ const k=lab[i]; if(k<0) continue;
+      const sc=st.H[i]-0.8*Math.max(0,Math.abs(st.S[i]>=0?st.D[i]-(info[k].dc||0):0)-1);
+      for(let e=off[i];e<off[i+1];e++){ const j=lab[adj[e]]; const b=j===k+1?k:(j===k-1&&k>0)?k-1:-1;
+        if(b>=0&&sc>borderSc[b]){ borderSc[b]=sc; borderH[b]=st.H[i]; border[b]=i; } } } }
+  for(let k=0;k<nT-1;k++){
+    const A=info[k], B=info[k+1]; if(!A.crown.length||!B.crown.length) continue;
+    const lvl=Math.min(A.top,B.top);
+    if(border[k]>=0&&borderH[k]>lvl-6){ const i=border[k]; contacts[k]={p:[st.X[i],st.H[i],st.Z[i]],gap:0}; continue; }
+    const dx=B.cx-A.cx, dz=B.cz-A.cz, dl=Math.hypot(dx,dz)||1, ux=dx/dl, uz=dz/dl, mid=(A.cx*ux+A.cz*uz+B.cx*ux+B.cz*uz)/2;
+    const near=(L,sign)=>{ let P=L.filter(i=>st.H[i]>lvl-5&&sign*((st.X[i]*ux+st.Z[i]*uz)-mid)>-3.5); if(P.length>500){ const step=P.length/500; P=Array.from({length:500},(_,j)=>P[Math.floor(j*step)]); } return P; };
+    const PA=near(A.crown,1), PB=near(B.crown,-1);
+    let bd=Infinity,ba=-1,bb=-1;
+    for(const a of PA) for(const b of PB){ const d=(st.X[a]-st.X[b])**2+(st.H[a]-st.H[b])**2+(st.Z[a]-st.Z[b])**2; if(d<bd){ bd=d; ba=a; bb=b; } }
+    if(ba>=0) contacts[k]={p:[(st.X[ba]+st.X[bb])/2,(st.H[ba]+st.H[bb])/2,(st.Z[ba]+st.Z[bb])/2],gap:Math.sqrt(bd)};
+  }
+  const labelsRaw=new Int16Array(st.remap.length); for(let i=0;i<st.remap.length;i++) labelsRaw[i]=lab[st.remap[i]];
+  st.vertexLabels=labelsRaw;
+  st.teeth=[];
+  for(let k=0;k<nT;k++){
+    const I=info[k], fdi=st.labels[k], unit=fdi%10, low=k<st.midIndex;
+    const mesC=low?contacts[k]:contacts[k-1], disC=low?contacts[k-1]:contacts[k];
+    // mesiodistal axis: from contact to contact, or along the arch for the last tooth
+    let ax,az;
+    const sc=st.seeds[k].s, cv=curveAt(st,sc), arch=[low?-cv.tx:cv.tx,low?-cv.tz:cv.tz]; // points distal
+    // mesiodistal axis: the arch line at the middle of the crown, pointing distal
+    { const r0=project(st,I.cx,I.cz), cv0=r0?curveAt(st,r0.s):cv; ax=low?-cv0.tx:cv0.tx; az=low?-cv0.tz:cv0.tz; }
+    const meas=I.crown.filter(i=>st.H[i]>I.top-(st.measDepth||(st.mask?6:4.5)));
+    const proj=meas.map(i=>[st.X[i]*ax+st.Z[i]*az,i]).sort((p,q)=>p[0]-q[0]);
+    const cut=Math.floor(proj.length*0.005);
+    let mn=proj.length?proj[cut][0]:0, mx=proj.length?proj[proj.length-1-cut][0]:0;
+    let pMin=proj.length?proj[cut][1]:null, pMax=proj.length?proj[proj.length-1-cut][1]:null;
+    // below the contact a tooth's colour can spill round its neighbour, so the crown may not reach far past a contact point
+    if(mesC){ const pc=mesC.p[0]*ax+mesC.p[2]*az; if(mn<pc-1) mn=pc-1; }
+    if(disC){ const pc=disC.p[0]*ax+disC.p[2]*az; if(mx>pc+1) mx=pc+1; }
+    const P=i=>[st.X[i],st.H[i],st.Z[i]];
+    let auto=meas.length>=8?Math.max(0,mx-mn):0;
+    if(st.contactWidth===true&&mesC&&disC&&mesC.gap<0.6&&disC.gap<0.6){ const pm=mesC.p[0]*ax+mesC.p[2]*az, pd=disC.p[0]*ax+disC.p[2]*az; auto=Math.abs(pd-pm); }
+    const mesialPt=mesC?mesC.p:(pMin!=null?P(pMin):[I.cx,I.top,I.cz]), distalPt=disC?disC.p:(pMax!=null?P(pMax):[I.cx,I.top,I.cz]);
+    // landmarks
+    let tip=null,th=-Infinity,buc=null,bh=-Infinity,mb=null,mbh=-Infinity,labP=null,ld=-Infinity;
+    const midP=(mn+mx)/2;
+    for(const i of I.crown){ const h=st.H[i], d=st.S[i]>=0?st.D[i]:I.dc, along=st.X[i]*ax+st.Z[i]*az;
+      if(h>th){ th=h; tip=i; }
+      if(d>I.dc&&h>bh){ bh=h; buc=i; }
+      if(d>I.dc&&along<midP&&h>mbh){ mbh=h; mb=i; }
+      if(h<I.top-1.5&&h>I.top-4.5&&along<mn+0.4*(mx-mn)&&d>ld){ ld=d; labP=i; } }
+    const alongPt=frac=>{ const t=mn+(mx-mn)*frac; return toCase(f,[ax*t+(-az)*((I.cx*-az+I.cz*ax)),I.top-1.5,az*t+ax*((I.cx*-az+I.cz*ax))]); };
+    const sOf=pt=>{ const r=project(st,pt[0],pt[2]); return r?r.s:sc; };
+    const manual=st.manual[fdi];
+    st.teeth.push({index:k,fdi,unit,s0:sOf(low?distalPt:mesialPt),s1:sOf(low?mesialPt:distalPt),
+      mesialS:sOf(mesialPt),distalS:sOf(distalPt),
+      autoWidth:auto,width:manual!=null?manual:auto,manual:manual!=null,
+      tip:tip!=null?toCase(f,P(tip)):toCase(f,[I.cx,I.top,I.cz]),
+      buccalCusp:buc!=null?toCase(f,P(buc)):null, mbCusp:mb!=null?toCase(f,P(mb)):null,
+      mesialContact:toCase(f,mesialPt), distalContact:toCase(f,distalPt),
+      pontPoint:alongPt(unit===4?0.65:0.3), center:alongPt(0.5), labial:labP!=null?toCase(f,P(labP)):null,
+      vertexCount:I.L.length});
+  }
+  return st.teeth;
+}
+function refresh(st){ st.seeds.sort((a,b)=>a.s-b.s); relabel(st); grow(st); prune(st);
+  if(st.mask&&!st.colourRefined){ st.colourRefined=true; if(dullEdges(st)){ grow(st); prune(st); } }
+  fillHoles(st); computeTeeth(st); }
+// unlabelled islands surrounded by one tooth (a dark filling or a stained fissure read as gum) belong to that tooth
+function fillHoles(st){
+  const n=st.n, lab=st.lab, {off,adj,boundary}=st.topo, seen=new Uint8Array(n), comp=[];
+  for(let s0=0;s0<n;s0++){ if(seen[s0]||lab[s0]>=0) continue;
+    comp.length=0; comp.push(s0); seen[s0]=1; let owner=-2, edge=false;
+    for(let q=0;q<comp.length;q++){ const v=comp[q]; if(boundary[v]) edge=true;
+      for(let e=off[v];e<off[v+1];e++){ const u=adj[e], l=lab[u];
+        if(l>=0){ if(owner===-2) owner=l; else if(owner!==l) owner=-1; }
+        else if(!seen[u]){ seen[u]=1; comp.push(u); } } }
+    if(!edge&&owner>=0&&comp.length<4000) for(const v of comp) lab[v]=owner; }
+  // ...and so is unlabelled surface high on the crown and inside the tooth's outline seen from above
+  // (a dark restoration that runs out over the lingual or buccal side is not enclosed, but it is still the crown)
+  const nT=st.seeds.length, top=new Float64Array(nT).fill(-Infinity);
+  for(let i=0;i<n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]) top[k]=st.H[i]; }
+  const hulls=[]; for(let k=0;k<nT;k++){ const P=[]; for(let i=0;i<n;i++) if(lab[i]===k&&st.H[i]>top[k]-3) P.push([st.X[i],st.Z[i]]); hulls.push(convexHull(P)); }
+  const inside=(Hl,x,z)=>{ if(Hl.length<3) return false; for(let a=0;a<Hl.length;a++){ const p=Hl[a], q=Hl[(a+1)%Hl.length];
+    if((x-p[0])*(q[1]-p[1])-(z-p[1])*(q[0]-p[0])>-0.3*Math.hypot(q[0]-p[0],q[1]-p[1])) return false; } return true; };
+  for(let i=0;i<n;i++){ if(lab[i]>=0) continue;
+    for(let k=0;k<nT;k++){ if(st.H[i]>top[k]-3.5&&st.H[i]<=top[k]+0.5&&inside(hulls[k],st.X[i],st.Z[i])){ lab[i]=k; break; } } }
+}
+// Gum between teeth is often only a little pinker than enamel, but it is pinker AND darker than the crown next to it.
+// Compare each tooth's lower edges with its own crown colour; edge strips that are clearly pinker and duller are gum.
+function dullEdges(st){
+  const DH=0.045, DL=0.05;
+  const nT=st.seeds.length, lab=st.lab, top=new Float64Array(nT).fill(-Infinity), {off,adj}=st.topo, n=st.n;
+  for(let i=0;i<n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]) top[k]=st.H[i]; }
+  const hs=Array.from({length:nT},()=>[]), ls=Array.from({length:nT},()=>[]);
+  for(let i=0;i<n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]-3){ hs[k].push(st.hueV[i]); ls[k].push(st.lumV[i]); } }
+  const h0=hs.map(a=>a.length?quantile(a,0.5):NaN), l0=ls.map(a=>a.length?quantile(a,0.5):NaN);
+  // only between teeth (mesial and distal sides): the labial and lingual necks keep their own, often darker, colour
+  const cx=new Float64Array(nT), cz=new Float64Array(nT), cc=new Float64Array(nT);
+  for(let i=0;i<n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]-3){ cx[k]+=st.X[i]; cz[k]+=st.Z[i]; cc[k]++; } }
+  const tx=new Float64Array(nT), tz=new Float64Array(nT);
+  for(let k=0;k<nT;k++){ if(!cc[k]) continue; cx[k]/=cc[k]; cz[k]/=cc[k]; const r=project(st,cx[k],cz[k]); const cv=curveAt(st,r?r.s:st.seeds[k].s); tx[k]=cv.tx; tz[k]=cv.tz; }
+  const cand=new Uint8Array(n);
+  for(let i=0;i<n;i++){ const k=lab[i]; if(k<0||st.H[i]>top[k]-2.5) continue;
+    const dx=st.X[i]-cx[k], dz=st.Z[i]-cz[k], dl=Math.hypot(dx,dz)||1, along=(dx*tx[k]+dz*tz[k])/dl;
+    if(Math.abs(along)<0.7) continue;
+    // and only on a side that has a neighbouring tooth (the last tooth's distal side keeps its neck)
+    const nb=along>0?k+1:k-1; if(nb<0||nb>=nT||!cc[nb]) continue;
+    if(st.hueV[i]>h0[k]+DH&&st.lumV[i]<l0[k]*(1-DL)) cand[i]=1; }
+  // smooth the candidate set a little (colour noise), then keep only strips that reach the tooth's edge
+  const sm=new Uint8Array(n); for(let i=0;i<n;i++){ if(lab[i]<0) continue; let c=cand[i],t=1; for(let e=off[i];e<off[i+1];e++){ c+=cand[adj[e]]; t++; } sm[i]=c*2>t?1:0; }
+  const gone=new Uint8Array(n), q=[];
+  for(let i=0;i<n;i++) if(sm[i]){ for(let e=off[i];e<off[i+1];e++) if(lab[adj[e]]!==lab[i]){ gone[i]=1; q.push(i); break; } }
+  for(let h=0;h<q.length;h++){ const v=q[h]; for(let e=off[v];e<off[v+1];e++){ const u=adj[e]; if(sm[u]&&!gone[u]&&lab[u]===lab[v]){ gone[u]=1; q.push(u); } } }
+  let cnt=0; for(let i=0;i<n;i++) if(gone[i]){ st.mask[i]=0; cnt++; }
+  return cnt>0;
+}
+// a crown is at most about 10 mm tall and 8 mm from its middle: anything further is soft tissue that was reached by mistake
+function prune(st){
+  const nT=st.seeds.length, top=new Float64Array(nT).fill(-Infinity), cx=new Float64Array(nT), cz=new Float64Array(nT), c=new Float64Array(nT), lab=st.lab;
+  for(let i=0;i<st.n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]) top[k]=st.H[i]; }
+  for(let i=0;i<st.n;i++){ const k=lab[i]; if(k>=0&&st.H[i]>top[k]-3){ cx[k]+=st.X[i]; cz[k]+=st.Z[i]; c[k]++; } }
+  for(let k=0;k<nT;k++) if(c[k]){ cx[k]/=c[k]; cz[k]/=c[k]; }
+  for(let i=0;i<st.n;i++){ const k=lab[i]; if(k<0) continue;
+    if(st.H[i]<top[k]-10||Math.hypot(st.X[i]-cx[k],st.Z[i]-cz[k])>8.5) lab[i]=-1; }
+  // a tooth may not run into its neighbour's stretch of the arch beyond its own outline:
+  // the outline is the crown's upper part (cusps and marginal ridges) seen from above, plus a margin for the bulge of the crown.
+  // Low surface past that, in the neighbour's stretch, is the neighbour's (a broken remnant) or gum.
+  if(st.seedsEdited) return;
+  const TD=3, MG=0.8;
+  // the outline comes only from the tooth's own stretch, so surface it crept onto past its neighbour's contact does not widen it
+  const hulls=[];
+  for(let k=0;k<nT;k++){ const s0=st.seeds[k].s0, s1=st.seeds[k].s1, own=s0!=null&&s1!=null, P=[];
+    for(let i=0;i<st.n;i++) if(lab[i]===k&&st.H[i]>top[k]-TD&&(!own||(st.S[i]>=s0-0.5&&st.S[i]<=s1+0.5))) P.push([st.X[i],st.Z[i]]);
+    if(own&&P.length<30){ P.length=0; for(let i=0;i<st.n;i++) if(lab[i]===k&&st.H[i]>top[k]-TD) P.push([st.X[i],st.Z[i]]); }
+    hulls.push(convexHull(P)); }
+  const outside=(Hl,x,z)=>{ if(Hl.length<3) return Infinity; let worst=-Infinity; // largest signed distance past an edge (CCW hull)
+    for(let a=0;a<Hl.length;a++){ const p=Hl[a], q=Hl[(a+1)%Hl.length], ex=q[0]-p[0], ez=q[1]-p[1], l=Math.hypot(ex,ez)||1;
+      const d=((x-p[0])*ez-(z-p[1])*ex)/l; if(d>worst) worst=d; } return worst; };
+  const sd=st.seeds;
+  for(let i=0;i<st.n;i++){ const k=lab[i]; if(k<0||st.S[i]<0) continue; const s0=st.S[i];
+    const into=(sd[k-1]&&sd[k].s0!=null&&s0<sd[k].s0)?k-1:(sd[k+1]&&sd[k].s1!=null&&s0>sd[k].s1)?k+1:-1;
+    if(into<0) continue;
+    if(outside(hulls[k],st.X[i],st.Z[i])>MG) lab[i]=outside(hulls[into],st.X[i],st.Z[i])<=MG+1.5?into:-1; }
+}
+function convexHull(P){
+  if(P.length<3) return P.slice();
+  P=P.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]), lo=[], up=[];
+  for(const p of P){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  for(let i=P.length-1;i>=0;i--){ const p=P[i]; while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  up.pop(); lo.pop(); return lo.concat(up);
+}
+
+// ---------------- editing ----------------
+function nearestVertex(st,l){
+  if(!st.grid){ const g=new Map(); for(let i=0;i<st.n;i++){ const k=Math.floor(st.X[i])+'_'+Math.floor(st.H[i])+'_'+Math.floor(st.Z[i]); let a=g.get(k); if(!a){ a=[]; g.set(k,a); } a.push(i); } st.grid=g; }
+  let best=-1,bd=Infinity; const cx=Math.floor(l[0]),cy=Math.floor(l[1]),cz=Math.floor(l[2]);
+  for(let r=1;r<=4&&best<0;r++) for(let a=-r;a<=r;a++) for(let b=-r;b<=r;b++) for(let c=-r;c<=r;c++){
+    const arr=st.grid.get((cx+a)+'_'+(cy+b)+'_'+(cz+c)); if(!arr) continue;
+    for(const i of arr){ const d=(st.X[i]-l[0])**2+(st.H[i]-l[1])**2+(st.Z[i]-l[2])**2; if(d<bd){ bd=d; best=i; } } }
+  return best;
+}
+function addTooth(st,pCase){
+  const l=toLocal(st.frame,pCase), v=nearestVertex(st,l); if(v<0) return false;
+  if(st.lab[v]>=0){ const sd=st.seeds[st.lab[v]]; if(sd.verts.some(i=>(st.X[i]-l[0])**2+(st.Z[i]-l[2])**2<1.0)) return false; }
+  const verts=[]; for(let i=0;i<st.n;i++){ if((st.X[i]-st.X[v])**2+(st.Z[i]-st.Z[v])**2<1.6*1.6&&st.H[i]>st.H[v]-2&&Math.abs(st.H[i]-st.H[v])<4) verts.push(i); }
+  const r=project(st,st.X[v],st.Z[v]);
+  st.seeds.push({s:r?r.s:0,verts}); st.seedsEdited=true; st.seqA=null; st.seqB=null; refresh(st); return true;
+}
+function removeTooth(st,pCase){
+  const l=toLocal(st.frame,pCase), v=nearestVertex(st,l); if(v<0||st.lab[v]<0||st.seeds.length<=1) return false;
+  const k=st.lab[v], fdi=st.labels[k]; delete st.manual[fdi];
+  st.seeds.splice(k,1); st.seedsEdited=true; st.seqA=null; st.seqB=null; refresh(st); return true;
+}
+function separateAt(st,pCase){
+  const l=toLocal(st.frame,pCase), r=project(st,l[0],l[2]); if(!r) return false;
+  const c=curveAt(st,r.s);
+  st.barriers.push({x:l[0],z:l[2],tx:c.tx,tz:c.tz,r:7}); refresh(st); return true;
+}
+function undoSeparations(st){ if(!st.barriers.length) return false; st.barriers=[]; refresh(st); return true; }
+// renumber a tooth; the teeth distal to it on the same side follow on consecutively
+function setToothNumber(st,t,unit){
+  const nA=st.midIndex;
+  if(t<nA){ const k=nA-1-t; const A=st.seqA.slice(); A[k]=unit; for(let j=k+1;j<A.length;j++) A[j]=Math.min(8,A[j-1]+1); st.seqA=A; }
+  else{ const k=t-nA; const Bq=st.seqB.slice(); Bq[k]=unit; for(let j=k+1;j<Bq.length;j++) Bq[j]=Math.min(8,Bq[j-1]+1); st.seqB=Bq; }
+  relabel(st); computeTeeth(st);
+}
+function setSwap(st,on){ st.swap=on; relabel(st); computeTeeth(st); }
+function projectCasePoint(st,p){ const l=toLocal(st.frame,p); const r=project(st,l[0],l[2]); return r?{s:r.s,d:r.d,h:l[1]}:null; }
+function toothMarkers(st){ return st.teeth.map(t=>({fdi:t.fdi,a:t.mesialContact,b:t.distalContact,manual:t.manual})); }
+function toothPointsLocal(st,t){ const out=[]; for(let i=0;i<st.n;i++) if(st.lab[i]===t) out.push([st.X[i],st.H[i],st.Z[i]]); return out; }
+
+// ---------------- arch analysis ----------------
+const fmt=(x,d=1)=>x==null||isNaN(x)?null:+x.toFixed(d);
+function analyze(U,L){
+  // U, L: segmentation states (or null)
+  const map=st=>{ const m={}; if(st) for(const t of st.teeth) m[t.fdi]=t; return m; };
+  const u=map(U), l=map(L);
+  const sum=(m,list)=>{ let s=0; for(const k of list){ if(!m[k]) return {sum:null,missing:k}; s+=m[k].width; } return {sum:s}; };
+  const r={};
+  const UA=[13,12,11,21,22,23], LA=[33,32,31,41,42,43];
+  const UO=[16,15,14,13,12,11,21,22,23,24,25,26], LO=[36,35,34,33,32,31,41,42,43,44,45,46];
+  const bolton=(mx,md,ideal,sd)=>{
+    if(mx.sum==null||md.sum==null) return {missing:[mx.missing,md.missing].filter(Boolean)};
+    const ratio=md.sum/mx.sum*100; const o={max:mx.sum,mand:md.sum,ratio,ideal,sd,diff:ratio-ideal};
+    if(ratio>ideal){ o.excessArch='mandibular'; o.excess=md.sum-mx.sum*ideal/100; o.idealOther=mx.sum*ideal/100; }
+    else{ o.excessArch='maxillary'; o.excess=mx.sum-md.sum*100/ideal; o.idealOther=md.sum*100/ideal; }
+    o.withinSD=Math.abs(ratio-ideal)<=sd; return o;
+  };
+  r.boltonAnterior=bolton(sum(u,UA),sum(l,LA),77.2,1.65);
+  r.boltonOverall=bolton(sum(u,UO),sum(l,LO),91.3,1.91);
+  const archDims=(st,m,q)=>{
+    if(!st) return null;
+    const [r1,l1]=st.jaw==='upper'?[10,20]:[40,30];
+    const t=k=>m[k]; const o={};
+    const pair=(a,b,key)=>t(a)&&t(b)&&t(a)[key]&&t(b)[key]?dist(t(a)[key],t(b)[key]):null;
+    o.intercanine=pair(r1+3,l1+3,'tip');
+    o.interpremolar=pair(r1+4,l1+4,'buccalCusp');
+    o.intermolar=pair(r1+6,l1+6,'mbCusp');
+    // available space: arch length between the mesial contacts of the first molars
+    if(t(r1+6)&&t(l1+6)){
+      const a=t(r1+6), b=t(l1+6);
+      // available space: segments joining the contact points from one first molar's mesial contact to the other's
+      // (a chain of straight segments, like a brass wire laid over the contacts, so a wavy arch line does not add length)
+      { const f0=st.frame, T=st.teeth, ia=a.index, ib=b.index, lo=Math.min(ia,ib), hi=Math.max(ia,ib);
+        const P=q=>{ const l=toLocal(f0,q); return [l[0],l[2]]; };
+        let prev=P(T[lo].mesialContact), len=0;
+        for(let k=lo+1;k<hi;k++){ const m=P(T[k].mesialContact), d=P(T[k].distalContact);
+          const first=Math.hypot(m[0]-prev[0],m[1]-prev[1])<=Math.hypot(d[0]-prev[0],d[1]-prev[1])?m:d, second=first===m?d:m;
+          len+=Math.hypot(first[0]-prev[0],first[1]-prev[1])+Math.hypot(second[0]-first[0],second[1]-first[1]); prev=second; }
+        const e=P(T[hi].mesialContact); len+=Math.hypot(e[0]-prev[0],e[1]-prev[1]);
+        o.available=len; }
+      const req=sum(m,[r1+5,r1+4,r1+3,r1+2,r1+1,l1+1,l1+2,l1+3,l1+4,l1+5]);
+      o.required=req.sum; o.discrepancy=req.sum!=null?o.available-req.sum:null;
+      // arch depth: incisal midline point to the line joining the first molars' mesial contacts, in the occlusal plane
+      const f=st.frame, P=toLocal(f,a.mesialContact), Q=toLocal(f,b.mesialContact);
+      const cMid=curveAt(st,st.midS), M=[cMid.x,0,cMid.z];
+      const dx=Q[0]-P[0], dz=Q[2]-P[2], ll=Math.hypot(dx,dz)||1;
+      o.depth=Math.abs((M[0]-P[0])*dz-(M[2]-P[2])*dx)/ll;
+    }
+    return o;
+  };
+  r.upper=archDims(U,u); r.lower=archDims(L,l);
+  // Pont's index and Korkhaus (upper incisors)
+  const SIu=sum(u,[12,11,21,22]).sum, SIl=sum(l,[42,41,31,32]).sum;
+  if(SIu!=null){
+    r.pont={SI:SIu, idealPremolar:SIu*100/80, idealMolar:SIu*100/64, korkhausIdeal:SIu*100/160};
+    if(u[14]&&u[24]) r.pont.premolar=dist(u[14].pontPoint,u[24].pontPoint);
+    if(u[16]&&u[26]) r.pont.molar=dist(u[16].pontPoint,u[26].pontPoint);
+    if(U&&u[14]&&u[24]&&(u[11]||u[21])){
+      const f=U.frame, P=toLocal(f,u[14].pontPoint), Q=toLocal(f,u[24].pontPoint);
+      const lp=(u[11]&&u[11].labial)||(u[21]&&u[21].labial);
+      if(lp){ const M=toLocal(f,lp); const dx=Q[0]-P[0],dz=Q[2]-P[2],ll=Math.hypot(dx,dz)||1;
+        r.pont.korkhaus=Math.abs((M[0]-P[0])*dz-(M[2]-P[2])*dx)/ll; }
+    }
+  }
+  if(SIu!=null&&SIl!=null) r.tonn={upper:SIu,lower:SIl,ratio:SIl/SIu*100,ideal:74};
+  if(SIl!=null) r.tanaka={lowerIncisors:SIl,upperQuadrant:SIl/2+11.0,lowerQuadrant:SIl/2+10.5};
+  // occlusion: overjet, overbite, midlines (both jaws segmented, in scanner position)
+  if(U&&L){
+    const ui=[11,21].filter(k=>u[k]).map(k=>u[k]), li=[31,41].filter(k=>l[k]).map(k=>l[k]);
+    if(ui.length&&li.length){
+      const f=L.frame;
+      const uTips=ui.map(t=>toLocal(f,t.tip)), lTips=li.map(t=>toLocal(f,t.tip));
+      const uTip=uTips.reduce((a,b)=>a[1]<b[1]?a:b), lTip=lTips.reduce((a,b)=>a[1]>b[1]?a:b);
+      const o={overbite:lTip[1]-uTip[1]};
+      // lower incisor labial surface at the level of the upper incisal edge
+      let zl=-Infinity; for(const t of li){ for(const p of toothPointsLocal(L,t.index)){ if(Math.abs(p[1]-uTip[1])<0.6&&p[2]>zl) zl=p[2]; } }
+      if(zl===-Infinity) zl=Math.max(...lTips.map(p=>p[2]));
+      o.overjet=uTip[2]-zl;
+      const um=toLocal(f,(()=>{ const c=curveAt(U,U.midS); return toCase(U.frame,[c.x,Eat(U,U.midS),c.z]); })());
+      const lm=(()=>{ const c=curveAt(L,L.midS); return [c.x,0,c.z]; })();
+      o.midlineShift=um[0]-lm[0]; // + = upper midline towards the patient's left
+      r.occlusion=o;
+    }
+  }
+  return r;
+}
+
+// ---------------- model base ----------------
+const STYLES={
+  abo_upper:[180,120,240,85,275,32,328],
+  abo_lower:[180,120,240,88,272,...Array.from({length:13},(_,i)=>-60+i*10)],
+  rounded:Array.from({length:48},(_,i)=>i*7.5),
+  rect:[0,90,180,270]
+};
+function footprint(pts,style,margin,backOffset){
+  // pts: [[x,z]] in frame coordinates. Returns convex polygon CCW in (u,v)=(x,-z)
+  const angs=STYLES[style]; const N=angs.map(a=>{ const r=a*Math.PI/180; return [Math.sin(r),Math.cos(r)]; });
+  const dvals=N.map(n=>{ let m=-Infinity; for(const p of pts){ const v=p[0]*n[0]+p[1]*n[1]; if(v>m) m=v; } return m+margin; });
+  if(backOffset!=null){ const bi=angs.indexOf(180); if(bi>=0) dvals[bi]=Math.max(dvals[bi],backOffset); }
+  let poly=[[-1e3,-1e3],[1e3,-1e3],[1e3,1e3],[-1e3,1e3]];
+  N.forEach((n,k)=>{
+    const out=[], d=dvals[k], inside=p=>p[0]*n[0]+p[1]*n[1]<=d+1e-9;
+    for(let i=0;i<poly.length;i++){
+      const a=poly[i], b=poly[(i+1)%poly.length], ia=inside(a), ib=inside(b);
+      if(ia) out.push(a);
+      if(ia!==ib){ const fa=a[0]*n[0]+a[1]*n[1]-d, fb=b[0]*n[0]+b[1]*n[1]-d, t=fa/(fa-fb); out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]); }
+    }
+    poly=out;
+  });
+  // drop near-duplicate vertices, convert to (u,v)=(x,-z), make CCW
+  const clean=[]; for(const p of poly){ const q=clean[clean.length-1]; if(!q||Math.hypot(p[0]-q[0],p[1]-q[1])>1e-6) clean.push(p); }
+  if(clean.length>1&&Math.hypot(clean[0][0]-clean[clean.length-1][0],clean[0][1]-clean[clean.length-1][1])<1e-6) clean.pop();
+  let uv=clean.map(p=>[p[0],-p[1]]);
+  if(area2(uv)<0) uv.reverse();
+  const backIdx=angs.indexOf(180);
+  return {uv, backOffset:backIdx>=0?dvals[backIdx]:null};
+}
+function area2(P){ let a=0; for(let i=0;i<P.length;i++){ const p=P[i],q=P[(i+1)%P.length]; a+=p[0]*q[1]-q[0]*p[1]; } return a/2; }
+
+// ear clipping for a simple CCW polygon (may contain a zero-width bridge); returns index triples
+function earClip(P){
+  const n=P.length; if(n<3) return [];
+  const prev=new Int32Array(n), next=new Int32Array(n);
+  for(let i=0;i<n;i++){ prev[i]=(i-1+n)%n; next[i]=(i+1)%n; }
+  const ar=(a,b,c)=>(P[b][0]-P[a][0])*(P[c][1]-P[a][1])-(P[b][1]-P[a][1])*(P[c][0]-P[a][0]);
+  const same=(a,b)=>P[a][0]===P[b][0]&&P[a][1]===P[b][1];
+  const reflex=new Uint8Array(n); for(let i=0;i<n;i++) reflex[i]=ar(prev[i],i,next[i])<=0?1:0;
+  const out=[]; let remaining=n, ear=0, stop=0;
+  const isEar=b=>{
+    const a=prev[b], c=next[b]; if(ar(a,b,c)<=1e-12) return false;
+    const minx=Math.min(P[a][0],P[b][0],P[c][0]), maxx=Math.max(P[a][0],P[b][0],P[c][0]);
+    const miny=Math.min(P[a][1],P[b][1],P[c][1]), maxy=Math.max(P[a][1],P[b][1],P[c][1]);
+    for(let p=next[c];p!==a;p=next[p]){
+      if(!reflex[p]) continue;
+      const x=P[p][0], y=P[p][1]; if(x<minx||x>maxx||y<miny||y>maxy) continue;
+      if(same(p,a)||same(p,b)||same(p,c)) continue;
+      if(ar(a,b,p)>=0&&ar(b,c,p)>=0&&ar(c,a,p)>=0) return false;
+    }
+    return true;
+  };
+  while(remaining>3){
+    if(isEar(ear)){
+      const a=prev[ear], c=next[ear]; out.push([a,ear,c]);
+      next[a]=c; prev[c]=a; remaining--;
+      reflex[a]=ar(prev[a],a,next[a])<=0?1:0; reflex[c]=ar(prev[c],c,next[c])<=0?1:0;
+      ear=c; stop=ear; continue;
+    }
+    ear=next[ear];
+    if(ear===stop){ // no ear found in a full pass: clip the flattest corner to keep going
+      let b=ear,bb=ear,bv=Infinity; do{ const v=Math.abs(ar(prev[b],b,next[b])); if(v<bv){ bv=v; bb=b; } b=next[b]; }while(b!==ear);
+      const a=prev[bb], c=next[bb]; out.push([a,bb,c]); next[a]=c; prev[c]=a; remaining--;
+      reflex[a]=ar(prev[a],a,next[a])<=0?1:0; reflex[c]=ar(prev[c],c,next[c])<=0?1:0;
+      ear=c; stop=ear;
+    }
+  }
+  out.push([prev[ear],ear,next[ear]]);
+  return out;
+}
+function segsIntersect(p1,p2,p3,p4){
+  const d=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  const d1=d(p3,p4,p1),d2=d(p3,p4,p2),d3=d(p1,p2,p3),d4=d(p1,p2,p4);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0))&&((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function selfIntersects(P){
+  const n=P.length, cell=1.0, grid=new Map();
+  const key=(i,j)=>i+'_'+j;
+  for(let k=0;k<n;k++){ const a=P[k],b=P[(k+1)%n];
+    const i0=Math.floor(Math.min(a[0],b[0])/cell),i1=Math.floor(Math.max(a[0],b[0])/cell),j0=Math.floor(Math.min(a[1],b[1])/cell),j1=Math.floor(Math.max(a[1],b[1])/cell);
+    for(let i=i0;i<=i1;i++) for(let j=j0;j<=j1;j++){ const kk=key(i,j); let arr=grid.get(kk); if(!arr){ arr=[]; grid.set(kk,arr); } arr.push(k); } }
+  for(const arr of grid.values()) for(let x=0;x<arr.length;x++) for(let y=x+1;y<arr.length;y++){
+    const a=arr[x],b=arr[y]; if(Math.abs(a-b)<=1||Math.abs(a-b)===n-1) continue;
+    if(segsIntersect(P[a],P[(a+1)%n],P[b],P[(b+1)%n])) return true;
+  }
+  return false;
+}
+
+// Step 1: trim the scan below a plane parallel to the biting surface and find its outline.
+function prepareBase(V,index,frame,opts){
+  const w=weld(V,index), nv=w.V.length/3;
+  const LX=new Float64Array(nv),LH=new Float64Array(nv),LZ=new Float64Array(nv);
+  for(let i=0;i<nv;i++){ const l=toLocal(frame,[w.V[3*i],w.V[3*i+1],w.V[3*i+2]]); LX[i]=l[0]; LH[i]=l[1]; LZ[i]=l[2]; }
+  let col=null; if(opts.colors){ col=new Float32Array(nv*3); for(let i=0;i<w.remap.length;i++){ const j=w.remap[i]; col[3*j]=opts.colors[3*i]; col[3*j+1]=opts.colors[3*i+1]; col[3*j+2]=opts.colors[3*i+2]; } }
+  const top=quantile(sampleIdx(nv,200000).map(i=>LH[i]),0.997);
+  let hmin=Infinity; for(let i=0;i<nv;i++) if(LH[i]<hmin) hmin=LH[i];
+  const yFloor=top-opts.trimDepth;
+  // clip triangles, sharing the new points along each cut edge
+  const nx=[],nh=[],nz=[],nc=[], vmap=new Int32Array(nv).fill(-1), emap=new Map(), tris=[];
+  const keep=i=>{ if(vmap[i]<0){ vmap[i]=nx.length; nx.push(LX[i]); nh.push(LH[i]); nz.push(LZ[i]); if(col) nc.push(col[3*i],col[3*i+1],col[3*i+2]); } return vmap[i]; };
+  const cut=(a,b)=>{ const k=a<b?a*nv+b:b*nv+a; let j=emap.get(k); if(j!==undefined) return j;
+    const t=(yFloor-LH[a])/(LH[b]-LH[a]); j=nx.length; nx.push(LX[a]+(LX[b]-LX[a])*t); nh.push(yFloor); nz.push(LZ[a]+(LZ[b]-LZ[a])*t);
+    if(col) nc.push(col[3*a]+(col[3*b]-col[3*a])*t,col[3*a+1]+(col[3*b+1]-col[3*a+1])*t,col[3*a+2]+(col[3*b+2]-col[3*a+2])*t);
+    emap.set(k,j); return j; };
+  for(let t=0;t<w.T.length;t+=3){
+    let v=[w.T[t],w.T[t+1],w.T[t+2]]; const up=v.map(i=>LH[i]>=yFloor); const c=up.filter(Boolean).length;
+    if(c===0) continue;
+    if(c===3){ tris.push(keep(v[0]),keep(v[1]),keep(v[2])); continue; }
+    if(c===1){ while(!up[0]){ v.push(v.shift()); up.push(up.shift()); } tris.push(keep(v[0]),cut(v[0],v[1]),cut(v[2],v[0])); }
+    else{ while(up[2]){ v.push(v.shift()); up.push(up.shift()); } const bc=cut(v[1],v[2]), ca=cut(v[2],v[0]); tris.push(keep(v[0]),keep(v[1]),bc, keep(v[0]),bc,ca); }
+  }
+  let T=Uint32Array.from(tris), NV=nx.length;
+  // keep the largest connected piece (drops loose scan fragments)
+  const par=new Int32Array(NV); for(let i=0;i<NV;i++) par[i]=i;
+  const find=x=>{ while(par[x]!==x){ par[x]=par[par[x]]; x=par[x]; } return x; };
+  for(let t=0;t<T.length;t+=3){ const a=find(T[t]),b=find(T[t+1]),c=find(T[t+2]); par[b]=a; par[find(c)]=a; }
+  const areaBy=new Map(), triArea=t=>{ const a=T[t],b=T[t+1],c=T[t+2];
+    return 0.5*len(cross([nx[b]-nx[a],nh[b]-nh[a],nz[b]-nz[a]],[nx[c]-nx[a],nh[c]-nh[a],nz[c]-nz[a]])); };
+  for(let t=0;t<T.length;t+=3){ const r=find(T[t]); areaBy.set(r,(areaBy.get(r)||0)+triArea(t)); }
+  let bestR=-1,bestA=-1; for(const [r,a] of areaBy) if(a>bestA){ bestA=a; bestR=r; }
+  const kept=[]; for(let t=0;t<T.length;t+=3) if(find(T[t])===bestR) kept.push(T[t],T[t+1],T[t+2]);
+  T=Uint32Array.from(kept);
+  // make the surface face outwards (towards the teeth)
+  let up=0; for(let t=0;t<T.length;t+=3){ const a=T[t],b=T[t+1],c=T[t+2];
+    up+=(nz[b]-nz[a])*(nx[c]-nx[a])-(nx[b]-nx[a])*(nz[c]-nz[a]); }
+  const flipped=up<0; if(flipped) for(let t=0;t<T.length;t+=3){ const x=T[t+1]; T[t+1]=T[t+2]; T[t+2]=x; }
+  // open edges -> loops
+  const dir=new Set(); for(let t=0;t<T.length;t+=3) for(let e=0;e<3;e++) dir.add(T[t+e]*NV+T[t+(e+1)%3]);
+  const nextB=new Map();
+  for(let t=0;t<T.length;t+=3) for(let e=0;e<3;e++){ const a=T[t+e],b=T[t+(e+1)%3]; if(!dir.has(b*NV+a)&&!nextB.has(a)) nextB.set(a,b); }
+  const loops=[], seen=new Set();
+  for(const s of nextB.keys()){ if(seen.has(s)) continue; const L=[]; let v=s; while(v!==undefined&&!seen.has(v)){ seen.add(v); L.push(v); v=nextB.get(v); } if(L.length>=3&&v===s) loops.push(L); }
+  const uvA=L=>area2(L.map(i=>[nx[i],-nz[i]]));
+  loops.sort((a,b)=>Math.abs(uvA(b))-Math.abs(uvA(a)));
+  return {frame,nx,nh,nz,nc:col?nc:null,T,loops,yFloor,top,hmin,flipped,openEdges:nextB.size,trimDepth:opts.trimDepth};
+}
+
+// Step 2: close the trimmed scan and stand it on a base block.
+function finishBase(pr,opts){
+  const {frame}=pr, nx=pr.nx.slice(),nh=pr.nh.slice(),nz=pr.nz.slice(), nc=pr.nc?pr.nc.slice():null;
+  const T=Array.from(pr.T), notes=[];
+  const stone=opts.stoneColor||[0.78,0.74,0.66];
+  const addV=(x,h,z,c)=>{ nx.push(x); nh.push(h); nz.push(z); if(nc) nc.push(...(c||stone)); return nx.length-1; };
+  const y0=pr.yFloor, yB=y0-opts.bevel, yBot=y0-opts.baseHeight;
+  let watertight=false, back=null;
+  const main=pr.loops[0];
+  // fill the smaller openings (scan holes) with a fan
+  for(const L of pr.loops.slice(1)){
+    let c=[0,0,0]; for(const i of L){ c[0]+=nx[i]; c[1]+=nh[i]; c[2]+=nz[i]; } c=mul(c,1/L.length);
+    const ci=addV(c[0],c[1],c[2],nc?[nc[3*L[0]],nc[3*L[0]+1],nc[3*L[0]+2]]:null);
+    for(let k=0;k<L.length;k++){ const a=L[k],b=L[(k+1)%L.length]; T.push(b,a,ci); }
+  }
+  if(pr.loops.length>1) notes.push((pr.loops.length-1)+' small hole'+(pr.loops.length>2?'s':'')+' in the scan closed');
+  const outlinePts=[]; // footprint must surround the outline
+  let hole=null;
+  if(main){
+    // skirt: drop the outline straight down to the cut plane
+    const proj=[]; let prevUV=null, prevId=-1;
+    for(const i of main){
+      let id;
+      if(nh[i]-y0<1e-6) id=i;
+      else{ if(prevUV&&Math.abs(prevUV[0]-nx[i])<1e-7&&Math.abs(prevUV[1]+nz[i])<1e-7) id=prevId; else id=addV(nx[i],y0,nz[i],nc?[nc[3*i],nc[3*i+1],nc[3*i+2]]:null); }
+      proj.push(id); prevUV=[nx[i],-nz[i]]; prevId=id;
+    }
+    for(let k=0;k<main.length;k++){
+      const a=main[k],b=main[(k+1)%main.length],ap=proj[k],bp=proj[(k+1)%main.length];
+      if(ap!==a) T.push(b,a,ap);
+      if(bp!==b&&ap!==bp) T.push(b,ap,bp);
+    }
+    // the outline as a polygon in the plane (consecutive duplicates removed)
+    const ring=[]; for(const id of proj){ if(ring[ring.length-1]!==id) ring.push(id); } if(ring.length>1&&ring[0]===ring[ring.length-1]) ring.pop();
+    hole=ring;
+    for(const id of ring) outlinePts.push([nx[id],nz[id]]);
+    const uvRing=ring.map(id=>[nx[id],-nz[id]]);
+    watertight=area2(uvRing)>0&&!selfIntersects(uvRing);
+    if(!watertight) notes.push('outline overlaps itself, so the base is joined without sealing it');
+  }else{
+    for(let i=0;i<nx.length;i+=7) outlinePts.push([nx[i],nz[i]]);
+    notes.push('scan was already closed');
+  }
+  const fp=footprint(outlinePts,opts.style,opts.margin,opts.backOffset); back=fp.backOffset;
+  let top=fp.uv.slice();
+  const ids={}; // build rings
+  let mergedPoly=null;
+  if(watertight){
+    // bridge the outline into the footprint polygon so it can be triangulated as one shape
+    const holeUV=hole.map(id=>[nx[id],-nz[id]]).reverse(), holeIds=hole.slice().reverse();
+    let mi=0; for(let k=1;k<holeUV.length;k++) if(holeUV[k][0]>holeUV[mi][0]) mi=k;
+    const M=holeUV[mi];
+    let bk=-1,bu=Infinity,bt=0;
+    for(let k=0;k<top.length;k++){ const a=top[k],b=top[(k+1)%top.length];
+      if((a[1]-M[1])*(b[1]-M[1])>0||a[1]===b[1]) continue;
+      const t=(M[1]-a[1])/(b[1]-a[1]), u=a[0]+(b[0]-a[0])*t; if(u>M[0]&&u<bu){ bu=u; bk=k; bt=t; } }
+    if(bk<0){ watertight=false; notes.push('could not join outline to base'); }
+    else{
+      const I=[bu,M[1]]; top.splice(bk+1,0,I);
+      const topIds=top.map(p=>addV(p[0],y0,-p[1]));
+      const Iid=topIds[bk+1];
+      const poly=[], pid=[];
+      for(let k=0;k<=bk+1;k++){ poly.push(top[k]); pid.push(topIds[k]); }
+      for(let k=0;k<=holeUV.length;k++){ const j=(mi+k)%holeUV.length; poly.push(holeUV[j]); pid.push(holeIds[j]); }
+      poly.push(I); pid.push(Iid);
+      for(let k=bk+2;k<top.length;k++){ poly.push(top[k]); pid.push(topIds[k]); }
+      for(const [a,b,c] of earClip(poly)) T.push(pid[a],pid[b],pid[c]);
+      ids.top=topIds;
+    }
+  }
+  if(!watertight){
+    top=fp.uv.slice();
+    const lift=0.3; ids.top=top.map(p=>addV(p[0],y0+lift,-p[1]));
+    for(let k=1;k<top.length-1;k++) T.push(ids.top[0],ids.top[k],ids.top[k+1]);
+  }
+  // bevel ring (offset outwards) and bottom ring
+  const nTop=top.length, bev=[];
+  for(let k=0;k<nTop;k++){
+    const p=top[(k-1+nTop)%nTop], c=top[k], q=top[(k+1)%nTop];
+    const n1=nrm([c[1]-p[1],-(c[0]-p[0]),0]), n2=nrm([q[1]-c[1],-(q[0]-c[0]),0]);
+    const m=[n1[0]+n2[0],n1[1]+n2[1]], dd=1+n1[0]*n2[0]+n1[1]*n2[1];
+    bev.push([c[0]+opts.bevel*m[0]/dd,c[1]+opts.bevel*m[1]/dd]);
+  }
+  const bIds=bev.map(p=>addV(p[0],yB,-p[1])), cIds=bev.map(p=>addV(p[0],yBot,-p[1]));
+  const A=ids.top;
+  for(let k=0;k<nTop;k++){ const k1=(k+1)%nTop;
+    T.push(A[k1],A[k],bIds[k], A[k1],bIds[k],bIds[k1]);
+    T.push(bIds[k1],bIds[k],cIds[k], bIds[k1],cIds[k],cIds[k1]); }
+  for(let k=1;k<nTop-1;k++) T.push(cIds[0],cIds[k+1],cIds[k]);
+  // back to scanner coordinates
+  const pos=new Float32Array(nx.length*3);
+  for(let i=0;i<nx.length;i++){ const p=toCase(frame,[nx[i],nh[i],nz[i]]); pos[3*i]=p[0]; pos[3*i+1]=p[1]; pos[3*i+2]=p[2]; }
+  return {pos,index:Uint32Array.from(T),colors:nc?Float32Array.from(nc):null,watertight,notes,backOffset:back,height:pr.top-yBot,scanTriCount:pr.T.length/3};
+}
+function topLevel(V,frame){
+  const ids=sampleIdx(V.length/3,60000), H=ids.map(i=>(V[3*i]-frame.o[0])*frame.ey[0]+(V[3*i+1]-frame.o[1])*frame.ey[1]+(V[3*i+2]-frame.o[2])*frame.ey[2]);
+  return quantile(H,0.997);
+}
+function defaultTrimDepth(jaw){ return jaw==='upper'?20:15; }
+
+// ---------------- export helpers ----------------
+function stlBinary(pos,index,name){
+  const nt=index.length/3, buf=new ArrayBuffer(84+50*nt), dv=new DataView(buf);
+  const hdr=(name||'model').slice(0,79); for(let i=0;i<hdr.length;i++) dv.setUint8(i,hdr.charCodeAt(i)&127);
+  dv.setUint32(80,nt,true);
+  for(let t=0;t<nt;t++){
+    const o=84+50*t, a=index[3*t],b=index[3*t+1],c=index[3*t+2];
+    const pa=[pos[3*a],pos[3*a+1],pos[3*a+2]],pb=[pos[3*b],pos[3*b+1],pos[3*b+2]],pc=[pos[3*c],pos[3*c+1],pos[3*c+2]];
+    const n=nrm(cross(sub(pb,pa),sub(pc,pa)));
+    [n,pa,pb,pc].forEach((v,k)=>{ dv.setFloat32(o+12*k,v[0],true); dv.setFloat32(o+12*k+4,v[1],true); dv.setFloat32(o+12*k+8,v[2],true); });
+  }
+  return new Uint8Array(buf);
+}
+const CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(files){ // files: [{name, data:Uint8Array}] -> Uint8Array (no compression)
+  const enc=s=>Array.from(s).map(ch=>ch.charCodeAt(0)&255);
+  const parts=[], central=[]; let offset=0;
+  for(const f of files){
+    const name=enc(f.name), crc=crc32(f.data), sz=f.data.length;
+    const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(8,0,true);
+    h.setUint32(14,crc,true); h.setUint32(18,sz,true); h.setUint32(22,sz,true); h.setUint16(26,name.length,true);
+    parts.push(new Uint8Array(h.buffer),Uint8Array.from(name),f.data);
+    const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true);
+    c.setUint32(16,crc,true); c.setUint32(20,sz,true); c.setUint32(24,sz,true); c.setUint16(28,name.length,true); c.setUint32(42,offset,true);
+    central.push(new Uint8Array(c.buffer),Uint8Array.from(name));
+    offset+=30+name.length+sz;
+  }
+  const cdSize=central.reduce((a,p)=>a+p.length,0);
+  const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cdSize,true); e.setUint32(16,offset,true);
+  const all=[...parts,...central,new Uint8Array(e.buffer)], total=all.reduce((a,p)=>a+p.length,0), out=new Uint8Array(total);
+  let p=0; for(const a of all){ out.set(a,p); p+=a.length; } return out;
+}
+
+const OrthoCore={eigSym3,weld,computeFrame,makeFrame,toLocal,toCase,segmentJaw,computeTeeth,relabel,addTooth,removeTooth,separateAt,undoSeparations,
+  setToothNumber,setSwap,projectCasePoint,toothMarkers,curveAt,Eat,analyze,prepareBase,finishBase,footprint,earClip,area2,selfIntersects,
+  defaultTrimDepth,topLevel,stlBinary,zipStore,crc32,PRIOR,quadrants};
+if(typeof module!=='undefined'&&module.exports) module.exports=OrthoCore; else root.OrthoCore=OrthoCore;
+})(typeof window!=='undefined'?window:globalThis);
+
+</script>
+<script>
+const C=window.OrthoCore;
+const $=id=>document.getElementById(id);
+const stage=$('stage');
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Y=new THREE.Vector3(0,1,0);
+const nextFrame=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,20)));
+
+// ---------- renderer / scene ----------
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setClearColor(0x000000,0);
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+stage.prepend(renderer.domElement);
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(35,1,0.1,5000);
+scene.add(camera);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.12; controls.screenSpacePanning=true;
+const hemi=new THREE.HemisphereLight(0xffffff,0x5a5650,0.5); scene.add(hemi);
+const key=new THREE.DirectionalLight(0xffffff,1.1); key.position.set(-0.7,1.1,1.4); camera.add(key);
+const rim=new THREE.DirectionalLight(0xffffff,0.25); rim.position.set(1,-0.3,-0.6); camera.add(rim);
+const lin=c=>new THREE.Color(c).convertSRGBToLinear();
+
+// ---------- display: resolution, brightness, contrast, surface ----------
+const SURFACE={matte:0.85,satin:0.6,gloss:0.32};
+const display={res:'auto',exposure:0.8,contrast:0.5,surface:'satin',shading:'smooth'};
+const RES_LABEL={low:'Low',standard:'Standard',high:'High',ultra:'Ultra'};
+let autoRes='high', autoNote='';
+function pixelRatio(){
+  const dpr=window.devicePixelRatio||1, mode=display.res==='auto'?autoRes:display.res;
+  const pr={low:1,standard:Math.max(1,Math.min(dpr,1.5)),high:Math.min(Math.max(dpr,1.5),2.5),ultra:Math.min(Math.max(dpr*1.5,2),3)}[mode];
+  const px=Math.max(1,stage.clientWidth*stage.clientHeight);
+  return Math.min(pr,Math.sqrt(16e6/px));
+}
+function updateResInfo(){
+  const c=renderer.domElement, mode=display.res==='auto'?autoRes:display.res;
+  $('resinfo').textContent=c.width+' × '+c.height+' px · '+(display.res==='auto'?'auto: ':'')+RES_LABEL[mode];
+}
+function applyLights(){
+  const c=display.contrast;
+  renderer.toneMappingExposure=display.exposure;
+  hemi.intensity=0.18+0.62*(1-c); key.intensity=0.55+1.25*c; rim.intensity=0.12+0.3*(1-c);
+  $('bright').value=display.exposure; $('brightv').textContent=Math.round(display.exposure*100)+'%';
+  $('contrast').value=c; $('contrastv').textContent=Math.round(c*100)+'%';
+}
+function applyDisplay(){
+  applyLights(); models.forEach(applyAppearance); resize();
+  const mark=(sel,attr,val)=>document.querySelectorAll(sel).forEach(b=>b.setAttribute('aria-pressed',b.dataset[attr]===val));
+  mark('#res button','r',display.res); mark('#surface button','s',display.surface); mark('#shading button','h',display.shading);
+  $('dnote').textContent=autoNote; $('dnote').hidden=!autoNote;
+}
+function avgLum(m){
+  if(m.color!=='scan'||!m.hasScanColor){ const c=lin(m.color==='scan'?DEFAULT_COLOR[m.jaw]:m.color); return 0.2126*c.r+0.7152*c.g+0.0722*c.b; }
+  if(m.texture) return 0.3;
+  let s=0,n=0;
+  for(const mesh of m.origMeshes){ const c=mesh.userData.scanColor; if(!c) continue;
+    const step=Math.max(1,Math.floor(c.count/5000));
+    for(let i=0;i<c.count;i+=step){ s+=0.2126*c.getX(i)+0.7152*c.getY(i)+0.0722*c.getZ(i); n++; } }
+  return n?s/n:0.4;
+}
+function autoDisplay(){
+  if(!models.length) return;
+  const tris=models.reduce((a,m)=>a+m.tris,0);
+  const coloured=models.some(m=>m.hasScanColor&&m.color==='scan');
+  const textured=models.some(m=>m.texture&&m.color==='scan');
+  const L=models.reduce((a,m)=>a+avgLum(m),0)/models.length;
+  const coarse=matchMedia('(pointer: coarse)').matches;
+  autoRes=tris>4e6?'standard':(tris>1.5e6&&coarse)?'standard':'high';
+  display.res='auto';
+  display.exposure=+Math.min(1.4,Math.max(0.45,0.5/Math.sqrt(Math.max(L,0.02)))).toFixed(2);
+  display.contrast=textured?0.3:coloured?0.4:0.6;
+  display.surface=coloured?'matte':'satin';
+  display.shading='smooth';
+  const fmts=[...new Set(models.map(m=>m.fmt))].join(', ');
+  const triTxt=tris>=1e6?(tris/1e6).toFixed(1)+' million':Math.round(tris/1000)+' thousand';
+  autoNote=`Set for ${fmts} · ${triTxt} triangles · ${textured?'texture photo':coloured?'scan colour':'no colour'}. `+
+    `${RES_LABEL[autoRes]} resolution${autoRes==='standard'?' to keep a large scan smooth to rotate':''}, `+
+    `${display.surface} surface, brightness ${Math.round(display.exposure*100)}% to suit how light the model is.`;
+  applyDisplay();
+}
+
+// holder: centres the case on screen. orient: rotates the case so the bite is upright. models keep their scanner coordinates.
+const holder=new THREE.Group(), orient=new THREE.Group(); holder.add(orient); scene.add(holder);
+let radius=30;
+const models=[]; let nextId=1;
+let jawMode='both', openMM=0, contactsOn=false, isSample=false, userOriented=false;
+const COLORS=[['scan','Scan colour'],['#ece3cf','Ivory stone'],['#dcc79a','Buff stone'],['#8fabd2','Blue die stone'],['#e0b4b0','Pink'],['#a9adb0','Grey resin']];
+const DEFAULT_COLOR={upper:'#ece3cf',lower:'#dcc79a',other:'#a9adb0'};
+
+function resize(){
+  const w=stage.clientWidth,h=stage.clientHeight;
+  renderer.setPixelRatio(pixelRatio());
+  renderer.setSize(w,h,false); updateResInfo(); camera.aspect=w/Math.max(h,1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(()=>resize()).observe(stage);
+
+let toastT;
+function toast(msg,ms=4200){ const t=$('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); if(ms) toastT=setTimeout(()=>t.hidden=true,ms); }
+const hideToast=()=>{ $('toast').hidden=true; };
+
+// ---------- loading ----------
+function prepGeometry(g){
+  if(g.attributes.normal && !g.index) g.deleteAttribute('normal');
+  if(!g.index && THREE.BufferGeometryUtils){ try{ g=THREE.BufferGeometryUtils.mergeVertices(g,1e-4);}catch(e){} }
+  g.computeVertexNormals();
+  return g;
+}
+function guessJaw(name){
+  const n=name.toLowerCase();
+  if(/upper|maxill|oberkiefer|superior|\bmax\b|[_\- ]u[_\-. ]|^u[_\- ]|_ok\b/.test(n)) return 'upper';
+  if(/lower|mandib|unterkiefer|inferior|\bmand\b|[_\- ]l[_\-. ]|^l[_\- ]|_uk\b/.test(n)) return 'lower';
+  return 'other';
+}
+function toLinearColors(g){
+  const c=g.attributes.color; if(!c) return g;
+  const col=new THREE.Color();
+  for(let i=0;i<c.count;i++){ col.setRGB(c.getX(i),c.getY(i),c.getZ(i)).convertSRGBToLinear(); c.setXYZ(i,col.r,col.g,col.b); }
+  return g;
+}
+const extOf=f=>f.name.split('.').pop().toLowerCase();
+const baseOf=n=>n.replace(/\.[^.]+$/,'').toLowerCase();
+function readFile(file){
+  return new Promise((res,rej)=>{
+    const ext=extOf(file);
+    if(!['stl','ply','obj'].includes(ext)) return rej(new Error(file.name+' is not an STL, PLY or OBJ file.'));
+    const r=new FileReader();
+    r.onerror=()=>rej(new Error(file.name+' couldn’t be read.'));
+    r.onload=()=>{
+      try{
+        let obj, text='';
+        if(ext==='stl') obj=new THREE.Mesh(prepGeometry(new THREE.STLLoader().parse(r.result)));
+        else if(ext==='ply') obj=new THREE.Mesh(toLinearColors(prepGeometry(new THREE.PLYLoader().parse(r.result))));
+        else{ text=new TextDecoder().decode(r.result); obj=new THREE.OBJLoader().parse(text); obj.traverse(o=>{ if(o.isMesh) o.geometry=toLinearColors(prepGeometry(o.geometry)); }); }
+        const mtllib=(text.match(/^mtllib\s+(.+)$/m)||[])[1];
+        // PLY scans with a photo texture name it in the header ("comment TextureFile name.jpg")
+        let texFile=null;
+        if(ext==='ply'){ const head=new TextDecoder('latin1').decode(new Uint8Array(r.result,0,Math.min(4096,r.result.byteLength)));
+          const t=(head.match(/^comment\s+TextureFile\s+(.+)$/m)||[])[1]; if(t&&obj.geometry&&obj.geometry.attributes.uv) texFile=t.trim(); }
+        res({obj,name:file.name.replace(/\.[^.]+$/,''),fmt:ext.toUpperCase(),file,mtllib:mtllib&&mtllib.trim(),texFile});
+      }catch(e){ rej(new Error(file.name+' couldn’t be opened. It may be damaged.')); }
+    };
+    r.readAsArrayBuffer(file);
+  });
+}
+const IMG=['jpg','jpeg','png'];
+async function findTexture(r,extras){
+  const imgs=extras.filter(f=>IMG.includes(extOf(f))); if(!imgs.length) return null;
+  const mtls=extras.filter(f=>extOf(f)==='mtl');
+  const mtl=mtls.find(f=>r.mtllib && f.name.toLowerCase()===r.mtllib.toLowerCase().split(/[\\/]/).pop()) || mtls.find(f=>baseOf(f.name)===baseOf(r.file.name)) || (mtls.length===1?mtls[0]:null);
+  let img=null;
+  if(r.texFile) img=imgs.find(f=>f.name.toLowerCase()===r.texFile.split(/[\\/]/).pop().toLowerCase())||null;
+  if(!img&&mtl){
+    const want=((await mtl.text()).match(/^\s*map_Kd\s+(?:-\S+\s+\S+\s+)*(.+)$/mi)||[])[1];
+    if(want) img=imgs.find(f=>f.name.toLowerCase()===want.trim().split(/[\\/]/).pop().toLowerCase());
+  }
+  img=img||imgs.find(f=>baseOf(f.name)===baseOf(r.file.name))||(imgs.length===1?imgs[0]:null);
+  if(!img) return null;
+  const url=URL.createObjectURL(img);
+  return new Promise(res=>new THREE.TextureLoader().load(url,t=>{
+    t.encoding=THREE.sRGBEncoding; t.anisotropy=renderer.capabilities.getMaxAnisotropy(); res(t);
+  },undefined,()=>res(null)));
+}
+async function loadFiles(list){
+  const all=[...list].filter(Boolean); if(!all.length) return;
+  const files=all.filter(f=>['stl','ply','obj'].includes(extOf(f)));
+  const extras=all.filter(f=>['mtl',...IMG].includes(extOf(f)));
+  const odd=all.filter(f=>!files.includes(f)&&!extras.includes(f));
+  if(!files.length){ toast(odd.length?'Open STL, PLY or OBJ scans. '+odd[0].name+' is not a scan file.':'Choose the OBJ scan together with its texture image.'); return; }
+  $('fname').textContent='Opening '+files.length+(files.length>1?' files…':' file…');
+  const results=await Promise.allSettled(files.map(readFile));
+  const ok=results.filter(r=>r.status==='fulfilled').map(r=>r.value);
+  const bad=results.filter(r=>r.status==='rejected').map(r=>r.reason.message);
+  if(odd.length) bad.push(odd.map(f=>f.name).join(', ')+' skipped (not a scan file).');
+  if(bad.length) toast(bad.join(' '));
+  if(!ok.length){ updateSummary(); return; }
+  if(isSample || ok.length>1 || (jawOf('upper')&&jawOf('lower'))){ clearAll(); isSample=false; }
+  for(const r of ok){
+    const tex=(r.fmt==='OBJ'||r.texFile)?await findTexture(r,extras):null;
+    addModel(r.obj,r.name,r.fmt+(tex?' + texture':''),guessJaw(r.name),null,tex);
+  }
+  resolveUnknownJaws();
+  afterChange(true);
+  autoDisplay();
+}
+$('file').addEventListener('change',e=>{ loadFiles(e.target.files); e.target.value=''; });
+let dragDepth=0;
+addEventListener('dragenter',e=>{ e.preventDefault(); dragDepth++; $('drop').hidden=false; });
+addEventListener('dragleave',()=>{ if(--dragDepth<=0){ dragDepth=0; $('drop').hidden=true; }});
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{ e.preventDefault(); dragDepth=0; $('drop').hidden=true; loadFiles(e.dataTransfer.files); });
+
+// ---------- models ----------
+function addModel(obj,name,fmt,jaw,color,texture){
+  const material=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.62,metalness:0,side:THREE.DoubleSide});
+  const group=new THREE.Group(); group.add(obj);
+  const m={id:nextId++,obj:group,name,fmt,jaw,material,visible:true,opacity:1,origMeshes:[],meshes:[],tris:0,hasScanColor:!!texture,texture:texture||null,
+           seg:null,frame:null,data:null,base:null,flipOcc:false,swap:false,labelEls:[],bars:null,plane:null};
+  group.userData.modelId=m.id;
+  obj.traverse(o=>{ if(o.isMesh){
+    o.material=material; m.origMeshes.push(o);
+    const g=o.geometry; if(g.attributes.color){ m.hasScanColor=true; o.userData.scanColor=g.attributes.color; }
+    m.tris+=(g.index?g.index.count:g.attributes.position.count)/3; }});
+  m.meshes=m.origMeshes;
+  m.color=color||(m.hasScanColor?'scan':DEFAULT_COLOR[jaw]);
+  m.basePos=group.position.clone();
+  orient.add(group); models.push(m);
+  return m;
+}
+function removeModel(m){
+  clearSegVisuals(m); removeBase(m,true); removePlane(m);
+  orient.remove(m.obj); m.obj.traverse(o=>o.geometry&&o.geometry.dispose()); m.material.dispose(); if(m.texture) m.texture.dispose();
+  models.splice(models.indexOf(m),1);
+}
+function clearAll(){ [...models].forEach(removeModel); userOriented=false; orient.quaternion.identity(); setOpen(0); }
+function resolveUnknownJaws(){
+  const unk=models.filter(m=>m.jaw==='other');
+  const has=j=>models.some(m=>m.jaw===j);
+  if(unk.length===1 && has('upper')!==has('lower')){ unk[0].jaw=has('upper')?'lower':'upper'; if(!unk[0].hasScanColor) unk[0].color=DEFAULT_COLOR[unk[0].jaw]; }
+}
+const jawOf=j=>models.find(m=>m.jaw===j);
+const modelById=id=>models.find(m=>m.id===id);
+
+let teethColorsOn=true, teethLabelsOn=true;
+function activeColors(m,mesh){
+  if(contactsOn&&(m.jaw==='upper'||m.jaw==='lower')&&mesh.userData.contactColor) return mesh.userData.contactColor;
+  if(teethColorsOn&&m.seg&&!m.base&&mesh.userData.toothColor) return mesh.userData.toothColor;
+  // a photo texture shows more detail than the scanner's vertex colours, so it wins when both are there
+  if(m.color==='scan'&&mesh.userData.scanColor&&!(m.texture&&!m.base)) return mesh.userData.scanColor;
+  return null;
+}
+function applyAppearance(m){
+  let anyVC=false;
+  for(const mesh of m.meshes){ const c=activeColors(m,mesh); if(c){ mesh.geometry.setAttribute('color',c); anyVC=true; } }
+  const useTex=!anyVC&&m.color==='scan'&&!!m.texture&&!m.base;
+  m.material.vertexColors=anyVC;
+  m.material.map=useTex?m.texture:null;
+  m.material.color.copy((anyVC||useTex)?new THREE.Color(1,1,1):lin(m.color==='scan'?DEFAULT_COLOR[m.jaw]:m.color));
+  m.material.roughness=SURFACE[display.surface];
+  m.material.flatShading=display.shading==='flat';
+  m.material.opacity=m.opacity; m.material.transparent=m.opacity<1; m.material.depthWrite=m.opacity>=1;
+  m.material.wireframe=wire;
+  m.material.needsUpdate=true;
+}
+function shown(m){ return m.visible && (jawMode==='both' || m.jaw===jawMode); }
+function applyVisibility(){ models.forEach(m=>m.obj.visible=shown(m)); }
+
+// ---------- orientation & centring ----------
+function localUp(){ return Y.clone().applyQuaternion(orient.quaternion.clone().invert()); }
+function setOpen(mm){
+  openMM=mm; $('open').value=mm; $('openv').textContent=mm.toFixed(1)+' mm';
+  const up=localUp();
+  models.forEach(m=>{ m.obj.position.copy(m.basePos); if(m.jaw==='upper') m.obj.position.addScaledVector(up,mm); });
+}
+function samplePoints(m,max=40000){
+  const d=modelData(m), n=d.pos.length/3, step=Math.max(1,Math.floor(n/max)), pts=[];
+  for(let i=0;i<n;i+=step) pts.push(new THREE.Vector3(d.pos[3*i],d.pos[3*i+1],d.pos[3*i+2]));
+  return pts;
+}
+function autoOrient(){
+  const up=jawOf('upper'), lo=jawOf('lower'); if(!up||!lo) return false;
+  const cen=pts=>pts.reduce((a,p)=>a.add(p),new THREE.Vector3()).multiplyScalar(1/pts.length);
+  const pu=samplePoints(up), pl=samplePoints(lo);
+  const dir=cen(pu).sub(cen(pl)); if(dir.lengthSq()<1e-9) return false;
+  const q1=new THREE.Quaternion().setFromUnitVectors(dir.normalize(),Y);
+  const P=pl.map(p=>p.clone().applyQuaternion(q1));
+  const c=cen(P); let sxx=0,szz=0,sxz=0;
+  P.forEach(p=>{ const x=p.x-c.x,z=p.z-c.z; sxx+=x*x; szz+=z*z; sxz+=x*z; });
+  const th=0.5*Math.atan2(2*sxz,sxx-szz);
+  const qy=new THREE.Quaternion().setFromAxisAngle(Y,th);
+  const R=P.map(p=>p.clone().applyQuaternion(qy));
+  let minx=Infinity,maxx=-Infinity,minz=Infinity,maxz=-Infinity;
+  R.forEach(p=>{ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);minz=Math.min(minz,p.z);maxz=Math.max(maxz,p.z); });
+  const midx=(minx+maxx)/2, midz=(minz+maxz)/2, strip=(maxx-minx)*0.06;
+  let sz=0,n=0; R.forEach(p=>{ if(Math.abs(p.x-midx)<strip){ sz+=p.z; n++; } });
+  let q=qy.multiply(q1);
+  if(n && sz/n<midz) q=new THREE.Quaternion().setFromAxisAngle(Y,Math.PI).multiply(q);
+  orient.quaternion.copy(q);
+  setOpen(openMM);
+  return true;
+}
+function recenter(){
+  holder.position.set(0,0,0); holder.updateMatrixWorld(true);
+  const box=new THREE.Box3(); models.forEach(m=>m.meshes.forEach(mesh=>box.expandByObject(mesh)));
+  if(box.isEmpty()) return;
+  holder.position.copy(box.getCenter(new THREE.Vector3())).negate();
+  radius=Math.max(box.getBoundingSphere(new THREE.Sphere()).radius,1e-3);
+  camera.near=radius/200; camera.far=radius*40; camera.updateProjectionMatrix();
+  controls.minDistance=radius*0.15; controls.maxDistance=radius*12;
+}
+function rotateCase(axis,angle){
+  userOriented=true;
+  orient.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis,angle));
+  setOpen(openMM); clearMeasures(); recenter(); refreshContacts(); setView('front');
+}
+$('tilt').addEventListener('click',()=>rotateCase(new THREE.Vector3(1,0,0),-Math.PI/2));
+$('spin').addEventListener('click',()=>rotateCase(Y,Math.PI/2));
+$('flip').addEventListener('click',()=>rotateCase(new THREE.Vector3(0,0,1),Math.PI));
+
+function afterChange(newCase){
+  if(newCase && !userOriented) autoOrient();
+  invalidateFrames();
+  setOpen(openMM);
+  models.forEach(applyAppearance); applyVisibility();
+  recenter(); clearMeasures(); renderModels(); updateSummary();
+  if(contactsOn) refreshContacts();
+  if(newCase) setView('front',true);
+  renderTeethPanel(); refreshPlanes(); refreshAnalysis();
+}
+function updateSummary(){
+  const u=models.filter(m=>m.jaw==='upper').length, l=models.filter(m=>m.jaw==='lower').length;
+  const parts=[]; if(u) parts.push('Upper'); if(l) parts.push('Lower');
+  const other=models.length-u-l; if(other) parts.push(other+' other');
+  $('fname').textContent=isSample?'Example case (generated, not a real scan)':models.length?models.length+(models.length>1?' scans · ':' scan · ')+parts.join(' + '):'No scans open';
+  $('mcount').textContent=models.length?models.length+'':'';
+}
+
+// ---------- model panel ----------
+const eyeSvg=on=>on?'<svg class="i" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>'
+                  :'<svg class="i" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.4-1"/></svg>';
+function renderModels(){
+  const ul=$('models'); ul.innerHTML='';
+  if(!models.length){ ul.innerHTML='<li class="empty">Open the upper and lower scans of a case together.</li>'; return; }
+  for(const m of models){
+    const li=document.createElement('li'); li.className='model'+(shown(m)?'':' off');
+    const colorOpts=COLORS.filter(([v])=>v!=='scan'||m.hasScanColor).map(([v,t])=>`<option value="${v}"${v===m.color?' selected':''}>${t}</option>`).join('');
+    li.innerHTML=`
+      <button class="icon-btn eye" aria-pressed="${m.visible}" title="${m.visible?'Hide':'Show'} ${esc(m.name)}">${eyeSvg(m.visible)}</button>
+      <div class="nm"><b title="${esc(m.name)}">${esc(m.name)}</b><small>${m.fmt} · ${Math.round(m.tris).toLocaleString()} triangles${m.base?' · on base':''}</small></div>
+      <button class="icon-btn rm" title="Close ${esc(m.name)}"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div class="ctl">
+        <select class="jaw" id="jaw-${m.id}" aria-label="Jaw"><option value="upper"${m.jaw==='upper'?' selected':''}>Upper</option><option value="lower"${m.jaw==='lower'?' selected':''}>Lower</option><option value="other"${m.jaw==='other'?' selected':''}>Other</option></select>
+        <select class="col" id="col-${m.id}" aria-label="Colour">${colorOpts}</select>
+        <input class="op" id="op-${m.id}" type="range" min="0.15" max="1" step="0.05" value="${m.opacity}" aria-label="Opacity of ${esc(m.name)}" title="Opacity">
+      </div>`;
+    li.querySelector('.eye').onclick=()=>{ m.visible=!m.visible; applyVisibility(); renderModels(); };
+    li.querySelector('.rm').onclick=()=>{ removeModel(m); afterChange(false); };
+    li.querySelector('.jaw').onchange=e=>{ m.jaw=e.target.value; if(m.color!=='scan') m.color=DEFAULT_COLOR[m.jaw]; clearSeg(m); if(!userOriented) autoOrient(); afterChange(false); };
+    li.querySelector('.col').onchange=e=>{ m.color=e.target.value; buildToothColors(m); applyAppearance(m); if(contactsOn) refreshContacts(); };
+    li.querySelector('.op').oninput=e=>{ m.opacity=+e.target.value; applyAppearance(m); };
+    ul.appendChild(li);
+  }
+}
+function esc(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------- toolbar ----------
+let wire=false;
+$('wire').addEventListener('click',e=>{ wire=!wire; e.currentTarget.setAttribute('aria-pressed',wire); models.forEach(applyAppearance); });
+function setJawMode(j){
+  jawMode=j; document.querySelectorAll('#jawseg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.j===j));
+  applyVisibility(); renderModels();
+}
+document.querySelectorAll('#jawseg button').forEach(b=>b.addEventListener('click',()=>{ viewJaw=false; setJawMode(b.dataset.j); }));
+$('open').addEventListener('input',e=>{ setOpen(+e.target.value); clearMeasures(); });
+$('open').addEventListener('change',()=>{ if(contactsOn) refreshContacts(); });
+
+// tool sheets: one open at a time on the right
+const SHEETS=['tpanel','bpanel','apanel','dpanel'];
+let openSheet=null;
+function showSheet(id){
+  openSheet=openSheet===id?null:id;
+  SHEETS.forEach(s=>{ $(s).hidden=s!==openSheet; });
+  document.querySelectorAll('[data-sheet]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.sheet===openSheet));
+  $('rightcol').classList.toggle('wide',openSheet==='apanel');
+  if(openSheet!=='tpanel') setEditMode('off');
+  if(openSheet==='apanel') refreshAnalysis();
+  if(openSheet==='tpanel') renderTeethPanel();
+  refreshPlanes();
+}
+document.querySelectorAll('[data-sheet]').forEach(b=>b.addEventListener('click',()=>showSheet(b.dataset.sheet)));
+
+// ---------- occlusal contacts ----------
+const BANDS=[[0,0xd7263d],[0.1,0xf08a24],[0.25,0xefd03a],[0.5,0x45a85a],[1.0,0x3b7dd8]].map(([d,c])=>[d,lin(c)]);
+const MAXD=1.0;
+function worldVerts(ms){
+  holder.updateMatrixWorld(true);
+  const list=[];
+  for(const m of ms) for(const mesh of m.meshes){
+    const p=mesh.geometry.attributes.position, nrm=mesh.geometry.attributes.normal;
+    const mw=mesh.matrixWorld, nm=new THREE.Matrix3().getNormalMatrix(mw);
+    const pos=new Float32Array(p.count*3), nor=new Float32Array(p.count*3), v=new THREE.Vector3();
+    for(let i=0;i<p.count;i++){
+      v.fromBufferAttribute(p,i).applyMatrix4(mw); pos[i*3]=v.x; pos[i*3+1]=v.y; pos[i*3+2]=v.z;
+      v.fromBufferAttribute(nrm,i).applyMatrix3(nm).normalize(); nor[i*3]=v.x; nor[i*3+1]=v.y; nor[i*3+2]=v.z;
+    }
+    list.push({m,mesh,pos,nor});
+  }
+  return list;
+}
+const cellKey=(x,y,z)=>((x*73856093)^(y*19349663)^(z*83492791))|0;
+function buildGrid(parts){
+  const g=new Map();
+  for(const part of parts){ const P=part.pos;
+    for(let i=0;i<P.length;i+=3){
+      const k=cellKey(Math.floor(P[i]/MAXD),Math.floor(P[i+1]/MAXD),Math.floor(P[i+2]/MAXD));
+      let a=g.get(k); if(!a){ a=[]; g.set(k,a); } a.push(P[i],P[i+1],P[i+2]);
+    }}
+  return g;
+}
+function paint(parts,grid){
+  const base=new THREE.Color();
+  for(const {m,mesh,pos,nor} of parts){
+    const n=pos.length/3, col=new Float32Array(n*3), sc=mesh.userData.scanColor;
+    if(!(m.color==='scan'&&sc)) base.copy(lin(m.color==='scan'?DEFAULT_COLOR[m.jaw]:m.color));
+    for(let i=0;i<n;i++){
+      const x=pos[i*3],y=pos[i*3+1],z=pos[i*3+2];
+      const cx=Math.floor(x/MAXD),cy=Math.floor(y/MAXD),cz=Math.floor(z/MAXD);
+      let best=MAXD*MAXD, bx=0,by=0,bz=0, found=false;
+      for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)for(let c=-1;c<=1;c++){
+        const arr=grid.get(cellKey(cx+a,cy+b,cz+c)); if(!arr) continue;
+        for(let j=0;j<arr.length;j+=3){ const dx=arr[j]-x,dy=arr[j+1]-y,dz=arr[j+2]-z, d=dx*dx+dy*dy+dz*dz;
+          if(d<best){ best=d; bx=dx;by=dy;bz=dz; found=true; } }
+      }
+      let out;
+      if(found){
+        const d=Math.sqrt(best), sign=(bx*nor[i*3]+by*nor[i*3+1]+bz*nor[i*3+2])<0?-1:1, sd=d*sign;
+        out=sd<=0?BANDS[0][1]:sd<0.1?BANDS[1][1]:sd<0.25?BANDS[2][1]:sd<0.5?BANDS[3][1]:BANDS[4][1];
+      }
+      if(out){ col[i*3]=out.r; col[i*3+1]=out.g; col[i*3+2]=out.b; }
+      else if(m.color==='scan'&&sc){ col[i*3]=sc.getX(i); col[i*3+1]=sc.getY(i); col[i*3+2]=sc.getZ(i); }
+      else { col[i*3]=base.r; col[i*3+1]=base.g; col[i*3+2]=base.b; }
+    }
+    mesh.userData.contactColor=new THREE.BufferAttribute(col,3);
+  }
+}
+function computeContacts(){
+  const ups=models.filter(m=>m.jaw==='upper'), los=models.filter(m=>m.jaw==='lower');
+  if(!ups.length||!los.length) return false;
+  const U=worldVerts(ups), L=worldVerts(los);
+  paint(U,buildGrid(L)); paint(L,buildGrid(U));
+  return true;
+}
+let contactJob=0;
+function refreshContacts(){
+  if(!contactsOn){ models.forEach(applyAppearance); return; }
+  const job=++contactJob;
+  toast('Calculating contacts…',0);
+  setTimeout(()=>{
+    if(job!==contactJob) return;
+    const ok=computeContacts();
+    hideToast();
+    if(!ok){ setContacts(false); toast('Contacts need one scan set as Upper and one as Lower. Set the jaw for each scan in the Models panel.'); return; }
+    models.forEach(applyAppearance);
+    if(openMM>1) toast('The bite is open, so no teeth are within 1 mm. Set Open bite to 0 to see contacts.');
+  },30);
+}
+function setContacts(on){
+  contactsOn=on; $('contacts').setAttribute('aria-pressed',on); $('legend').hidden=!on;
+  if(on) $('panel').open=true;
+  if(!on) models.forEach(applyAppearance);
+}
+$('contacts').addEventListener('click',()=>{ setContacts(!contactsOn); if(contactsOn) refreshContacts(); });
+
+// ---------- views ----------
+const VIEWS={front:[0,0.05,1],right:[-1,0.05,0],left:[1,0.05,0],back:[0,0.05,-1],upperOcc:[0,-1,0.0015],lowerOcc:[0,1,0.0015]};
+let tween=null, viewJaw=false;
+function setView(v,instant){
+  if(v==='upperOcc'||v==='lowerOcc'){ setJawMode(v==='upperOcc'?'upper':'lower'); viewJaw=true; }
+  else if(viewJaw){ setJawMode('both'); viewJaw=false; }
+  const dir=new THREE.Vector3(...VIEWS[v]).normalize();
+  const dist=radius/Math.sin(THREE.MathUtils.degToRad(camera.fov/2))*1.08;
+  const to=dir.multiplyScalar(dist);
+  if(instant||reduceMotion){ camera.position.copy(to); controls.target.set(0,0,0); controls.update(); return; }
+  tween={from:camera.position.clone(),tFrom:controls.target.clone(),to,start:performance.now()};
+}
+document.querySelectorAll('.views button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.v)));
+
+// ---------- picking ----------
+const isShown=o=>{ while(o){ if(!o.visible) return false; o=o.parent; } return true; };
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+function pick(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(ndc,camera);
+  const hit=ray.intersectObject(orient,true).find(h=>h.object.isMesh&&!h.object.userData.helper&&isShown(h.object));
+  if(!hit) return null;
+  let o=hit.object; while(o&&o.userData.modelId==null) o=o.parent;
+  const m=o?modelById(o.userData.modelId):null;
+  const local=m?m.obj.worldToLocal(hit.point.clone()):null;
+  return {point:hit.point.clone(),m,local};
+}
+
+// ---------- measuring ----------
+let measuring=false, pending=null; const measures=[];
+const mMat=new THREE.MeshBasicMaterial({color:0xd2552c,depthTest:false});
+const lMat=new THREE.LineBasicMaterial({color:0xd2552c,depthTest:false});
+$('measure').addEventListener('click',e=>{
+  measuring=!measuring; e.currentTarget.setAttribute('aria-pressed',measuring);
+  if(measuring){ setEditMode('off'); cancelCaliper(); }
+  if(!measuring && pending){ scene.remove(pending.dot); pending=null; }
+  renderList();
+});
+$('clear').addEventListener('click',clearMeasures);
+function dot(p){ const m=new THREE.Mesh(new THREE.SphereGeometry(radius*0.012,12,8),mMat); m.position.copy(p); m.renderOrder=10; scene.add(m); return m; }
+function clearMeasures(){
+  measures.forEach(m=>{ m.objs.forEach(o=>scene.remove(o)); m.tag.remove(); });
+  measures.length=0; if(pending){ scene.remove(pending.dot); pending=null; }
+  renderList();
+}
+function renderList(){
+  $('mlist').innerHTML=measures.map(m=>`<li>${m.d.toFixed(2)} mm</li>`).join('');
+  $('mhelp').hidden=measures.length>0 && !pending;
+  $('mhelp').textContent=pending?'Now tap the second point.':'Tap two points on the model.';
+  $('measures').hidden=!measuring && measures.length===0;
+}
+function measureTap(h){
+  if(!pending){ pending={p:h.point,dot:dot(h.point)}; }
+  else{
+    const b=dot(h.point);
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([pending.p,h.point]),lMat); line.renderOrder=9; scene.add(line);
+    const tag=document.createElement('div'); tag.className='tag'; const d=pending.p.distanceTo(h.point); tag.textContent=d.toFixed(2)+' mm'; stage.appendChild(tag);
+    measures.push({a:pending.p,b:h.point,d,objs:[pending.dot,b,line],tag});
+    pending=null;
+  }
+  renderList();
+}
+
+let down=null, activePointers=0;
+renderer.domElement.addEventListener('pointerdown',e=>{ activePointers++; down=activePointers===1?{x:e.clientX,y:e.clientY,t:performance.now()}:null; });
+renderer.domElement.addEventListener('pointerup',e=>{
+  activePointers=Math.max(0,activePointers-1);
+  if(!down) return;
+  const moved=Math.hypot(e.clientX-down.x,e.clientY-down.y), quick=performance.now()-down.t<500; down=null;
+  if(moved>6||!quick) return;
+  const mode=caliper?'caliper':editMode!=='off'?'edit':measuring?'measure':null;
+  if(!mode) return;
+  const h=pick(e); if(!h) return;
+  if(mode==='caliper') caliperTap(h); else if(mode==='edit') editTap(h); else measureTap(h);
+});
+renderer.domElement.addEventListener('pointercancel',()=>{ activePointers=Math.max(0,activePointers-1); down=null; });
+
+// ================= TEETH: segmentation, labels, editing =================
+function modelData(m){
+  if(m.data) return m.data;
+  m.obj.updateMatrixWorld(true);
+  const inv=new THREE.Matrix4().copy(m.obj.matrixWorld).invert();
+  let n=0, ni=0;
+  for(const mesh of m.origMeshes){ const g=mesh.geometry; n+=g.attributes.position.count; ni+=g.index?g.index.count:g.attributes.position.count; }
+  const pos=new Float32Array(n*3), index=new Uint32Array(ni);
+  const hasCol=m.origMeshes.some(x=>x.userData.scanColor), col=hasCol?new Float32Array(n*3):null;
+  const offsets=[]; let o=0, oi=0; const v=new THREE.Vector3(), stone=lin(DEFAULT_COLOR[m.jaw]||'#ece3cf');
+  for(const mesh of m.origMeshes){
+    const g=mesh.geometry, p=g.attributes.position, rel=new THREE.Matrix4().multiplyMatrices(inv,mesh.matrixWorld), sc=mesh.userData.scanColor;
+    for(let i=0;i<p.count;i++){ v.fromBufferAttribute(p,i).applyMatrix4(rel); pos[3*(o+i)]=v.x; pos[3*(o+i)+1]=v.y; pos[3*(o+i)+2]=v.z;
+      if(col){ col[3*(o+i)]=sc?sc.getX(i):stone.r; col[3*(o+i)+1]=sc?sc.getY(i):stone.g; col[3*(o+i)+2]=sc?sc.getZ(i):stone.b; } }
+    if(g.index){ const a=g.index.array; for(let k=0;k<a.length;k++) index[oi+k]=a[k]+o; oi+=a.length; }
+    else { for(let k=0;k<p.count;k++) index[oi+k]=o+k; oi+=p.count; }
+    offsets.push(o); o+=p.count;
+  }
+  m.data={pos,index,colors:col,offsets};
+  return m.data;
+}
+function invalidateFrames(){ models.forEach(m=>{ m.frame=null; m.topH=null; }); }
+function ensureFrames(){
+  const U=jawOf('upper'), L=jawOf('lower');
+  if(U&&L){
+    if(U.frame&&L.frame) return;
+    const dU=modelData(U), dL=modelData(L), cu=centroidOf(dU.pos), cl=centroidOf(dL.pos);
+    L.frame=C.computeFrame(dL.pos,dL.index,{upHint:[cu[0]-cl[0],cu[1]-cl[1],cu[2]-cl[2]]});
+    U.frame=C.computeFrame(dU.pos,dU.index,{axes:L.frame});
+  }
+  for(const m of models) if((m.jaw==='upper'||m.jaw==='lower')&&!m.frame){ const d=modelData(m); m.frame=C.computeFrame(d.pos,d.index,{flip:m.flipOcc}); }
+}
+function centroidOf(P){ const n=P.length/3, st=Math.max(1,Math.floor(n/50000)); let x=0,y=0,z=0,c=0; for(let i=0;i<n;i+=st){ x+=P[3*i]; y+=P[3*i+1]; z+=P[3*i+2]; c++; } return [x/c,y/c,z/c]; }
+
+const TOOTH_PALETTE=['#e9b872','#8fc1e3','#b9a3e3','#9fd39a','#ef9f94','#7fcfc6','#e3b69a','#a9b4ee'].map(lin);
+const GUM_TINT=lin('#d9a6a0');
+function buildToothColors(m){
+  for(const mesh of m.origMeshes) delete mesh.userData.toothColor;
+  if(!m.seg) return;
+  const d=modelData(m), labs=m.seg.vertexLabels, base=lin(m.color==='scan'?DEFAULT_COLOR[m.jaw]:m.color);
+  m.origMeshes.forEach((mesh,k)=>{
+    const o=d.offsets[k], n=mesh.geometry.attributes.position.count, col=new Float32Array(n*3), sc=mesh.userData.scanColor;
+    for(let i=0;i<n;i++){ const t=labs[o+i];
+      let c;
+      if(t>=0) c=TOOTH_PALETTE[t%TOOTH_PALETTE.length];
+      else if(m.color==='scan'&&sc){ col[3*i]=sc.getX(i)*0.85; col[3*i+1]=sc.getY(i)*0.85; col[3*i+2]=sc.getZ(i)*0.85; continue; }
+      else c=base;
+      col[3*i]=c.r; col[3*i+1]=c.g; col[3*i+2]=c.b; }
+    mesh.userData.toothColor=new THREE.BufferAttribute(col,3);
+  });
+}
+const BAR_MAT=new THREE.LineBasicMaterial({color:0xc2410c}), MID_MAT=new THREE.LineBasicMaterial({color:0x2f62b0}); // blue = measured by hand
+function clearSegVisuals(m){
+  if(m.bars){ m.obj.remove(m.bars); m.bars.traverse(o=>o.geometry&&o.geometry.dispose()); m.bars=null; }
+  m.labelEls.forEach(el=>el.remove()); m.labelEls=[];
+}
+function updateSegVisuals(m){
+  clearSegVisuals(m);
+  buildToothColors(m); applyAppearance(m);
+  if(!m.seg) return;
+  // a bar above each tooth from its mesial to its distal contact point, like a caliper
+  const g=new THREE.Group(); g.userData.helper=true;
+  const ey0=m.seg.frame.ey, pts=[], man=[];
+  for(const t of m.seg.teeth){
+    const lift=p=>{ const k=(t.tip[0]-p[0])*ey0[0]+(t.tip[1]-p[1])*ey0[1]+(t.tip[2]-p[2])*ey0[2]+0.6; return new THREE.Vector3(p[0]+ey0[0]*k,p[1]+ey0[1]*k,p[2]+ey0[2]*k); };
+    const a=lift(t.mesialContact), b=lift(t.distalContact), ey=new THREE.Vector3(...ey0).multiplyScalar(-1.4);
+    (t.manual?man:pts).push(a,b, a,a.clone().add(ey), b,b.clone().add(ey));
+  }
+  if(pts.length) g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),BAR_MAT));
+  if(man.length) g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(man),MID_MAT));
+  g.traverse(o=>{ o.userData.helper=true; o.renderOrder=5; });
+  m.bars=g; m.obj.add(g);
+  const ey=m.seg.frame.ey;
+  m.labelEls=m.seg.teeth.map(t=>{
+    const el=document.createElement('div'); el.className='tlabel'+(t.manual?' man':''); el.textContent=t.fdi;
+    el._p=new THREE.Vector3(t.tip[0]+ey[0]*1.6,t.tip[1]+ey[1]*1.6,t.tip[2]+ey[2]*1.6);
+    stage.appendChild(el); return el; });
+}
+function clearSeg(m){ m.seg=null; clearSegVisuals(m); buildToothColors(m); }
+
+async function findTeeth(){
+  const targets=models.filter(m=>m.jaw==='upper'||m.jaw==='lower');
+  if(!targets.length){ toast('Set each scan to Upper or Lower in the Models panel first.'); return; }
+  toast('Finding teeth…',0); $('tfind').disabled=true; await nextFrame();
+  const errs=[];
+  try{
+    ensureFrames();
+    for(const m of targets){
+      try{ const d=modelData(m); m.seg=C.segmentJaw(d.pos,d.index,m.frame,m.jaw,{swapSides:m.swap,colors:d.colors}); }
+      catch(e){ m.seg=null; errs.push(m.name+': '+e.message); }
+      updateSegVisuals(m);
+    }
+  }catch(e){ errs.push(e.message); }
+  $('tfind').disabled=false; hideToast();
+  const found=targets.filter(m=>m.seg);
+  if(found.length){ const j=found.find(m=>m.jaw===teethJaw)?teethJaw:found[0].jaw; setTeethJaw(j); }
+  if(errs.length) toast(errs.join(' '),8000);
+  renderTeethPanel(); refreshAnalysis();
+}
+$('tfind').addEventListener('click',findTeeth);
+
+let teethJaw='upper';
+function setTeethJaw(j){ teethJaw=j; document.querySelectorAll('#tjaw button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.j===j)); renderTeethPanel(); }
+document.querySelectorAll('#tjaw button').forEach(b=>b.addEventListener('click',()=>setTeethJaw(b.dataset.j)));
+const TOOTH_NAMES=['Central incisor','Lateral incisor','Canine','1st premolar','2nd premolar','1st molar','2nd molar','3rd molar'];
+function renderTeethPanel(){
+  const segd=models.filter(m=>m.seg);
+  const st=$('tstatus');
+  if(!segd.length) st.textContent='Finds each tooth along the arch and measures its mesiodistal width. Check the boundaries before using the numbers.';
+  else st.textContent=segd.map(m=>`${m.jaw==='upper'?'Upper':'Lower'}: ${m.seg.teeth.length} teeth${m.seg.mask?' (gum line from scan colour)':''}`).join(' · ')+'. Each tooth has its own colour; the bar above it runs between its contact points. Check the colours follow the gum line and the gaps between teeth, and correct any tooth that is off.';
+  $('tundo').disabled=!segd.some(m=>m.seg.barriers&&m.seg.barriers.length);
+  const m=models.find(x=>x.jaw===teethJaw&&x.seg), box=$('ttable');
+  if(!m){ box.innerHTML=`<p class="missing">${models.some(x=>x.jaw===teethJaw)?'Tap Find teeth to measure this arch.':'No '+teethJaw+' scan is open.'}</p>`; return; }
+  const q=C.quadrants(m.seg);
+  const rows=m.seg.teeth.slice().sort((a,b)=>(Math.floor(a.fdi/10)-Math.floor(b.fdi/10))||(a.unit-b.unit));
+  box.innerHTML=`<table class="ttable"><thead><tr><th>Tooth</th><th style="text-align:right">Width mm</th><th></th><th></th></tr></thead><tbody>${rows.map(t=>{
+    const quad=Math.floor(t.fdi/10);
+    const opts=[1,2,3,4,5,6,7,8].map(u=>`<option value="${u}"${u===t.unit?' selected':''}>${quad}${u}</option>`).join('');
+    return `<tr data-t="${t.index}"${caliper&&caliper.m===m&&caliper.t===t.index?' class="sel"':''}>
+      <td><select aria-label="Tooth number" data-act="num" title="${TOOTH_NAMES[t.unit-1]}">${opts}</select></td>
+      <td class="w">${t.width.toFixed(2)}</td>
+      <td>${t.manual?'<span class="badge man">manual</span>':'<span class="badge">auto</span>'}</td>
+      <td style="text-align:right">${t.manual?`<button data-act="reset" title="Use the automatic width (${t.autoWidth.toFixed(2)})">Auto</button>`:''}<button data-act="cal" title="Measure this tooth yourself: tap its two contact points">Measure</button></td></tr>`;}).join('')}</tbody></table>`;
+  box.querySelectorAll('tr[data-t]').forEach(tr=>{
+    const t=+tr.dataset.t, tooth=m.seg.teeth[t];
+    tr.querySelector('[data-act=num]').onchange=e=>{ C.setToothNumber(m.seg,t,+e.target.value); segChanged(m); };
+    tr.querySelector('[data-act=cal]').onclick=()=>startCaliper(m,t);
+    const r=tr.querySelector('[data-act=reset]'); if(r) r.onclick=()=>{ delete m.seg.manual[tooth.fdi]; C.computeTeeth(m.seg); segChanged(m); };
+  });
+}
+function segChanged(m){ updateSegVisuals(m); renderTeethPanel(); refreshAnalysis(); }
+$('tcolors').addEventListener('change',e=>{ teethColorsOn=e.target.checked; models.forEach(applyAppearance); });
+$('tlabels').addEventListener('change',e=>{ teethLabelsOn=e.target.checked; });
+$('tundo').addEventListener('click',()=>{ models.forEach(m=>{ if(m.seg&&C.undoSeparations(m.seg)) segChanged(m); }); renderTeethPanel(); });
+$('tswap').addEventListener('click',()=>{
+  const m=models.find(x=>x.jaw===teethJaw); if(!m) return;
+  m.swap=!m.swap; if(m.seg){ C.setSwap(m.seg,m.swap); segChanged(m); }
+  toast(m.swap?'Right and left swapped for the '+teethJaw+' arch.':'Right and left restored for the '+teethJaw+' arch.');
+});
+$('tflipocc').addEventListener('click',async()=>{
+  const m=models.find(x=>x.jaw===teethJaw); if(!m) return;
+  if(jawOf('upper')&&jawOf('lower')){ toast('With both jaws open the biting side is taken from the bite itself.'); return; }
+  m.flipOcc=!m.flipOcc; m.frame=null; m.topH=null; if(m.seg){ await findTeeth(); } refreshPlanes();
+});
+
+// boundary editing
+let editMode='off';
+const EDIT_HELP={off:'Pick a tool, then tap the model.',add:'Tap the middle of a tooth that was missed or merged with its neighbour.',remove:'Tap a coloured area that is not a tooth, or a tooth to merge into its neighbours.',separate:'Tap the contact between two teeth that run into each other.'};
+function setEditMode(e){
+  editMode=e; document.querySelectorAll('#tedit button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.e===e)); $('tedithelp').textContent=EDIT_HELP[e];
+  if(e!=='off'){ if(measuring) $('measure').click(); cancelCaliper(); }
+  updateModebar();
+}
+document.querySelectorAll('#tedit button').forEach(b=>b.addEventListener('click',()=>setEditMode(b.dataset.e)));
+function editTap(h){
+  const m=h.m; if(!m||!m.seg){ toast('Tap Find teeth first.'); return; }
+  const p=[h.local.x,h.local.y,h.local.z];
+  const ok=editMode==='add'?C.addTooth(m.seg,p):editMode==='remove'?C.removeTooth(m.seg,p):C.separateAt(m.seg,p);
+  if(!ok){ toast(editMode==='add'?'That tooth already has a seed. Tap the middle of an uncoloured or merged tooth.':editMode==='remove'?'Tap on a coloured tooth.':'Tap on the teeth, at the contact point.'); return; }
+  if(teethJaw!==m.jaw) setTeethJaw(m.jaw);
+  segChanged(m);
+}
+
+// manual caliper for one tooth
+let caliper=null;
+function startCaliper(m,t){
+  setEditMode('off'); if(measuring) $('measure').click(); cancelCaliper();
+  caliper={m,t,pts:[],dots:[]};
+  updateModebar(); renderTeethPanel();
+}
+function cancelCaliper(){ if(!caliper) return; caliper.dots.forEach(d=>scene.remove(d)); caliper=null; updateModebar(); renderTeethPanel(); }
+function caliperTap(h){
+  if(h.m!==caliper.m){ toast('Tap on the '+caliper.m.jaw+' arch.'); return; }
+  caliper.pts.push(h.local.clone()); caliper.dots.push(dot(h.point));
+  if(caliper.pts.length===2){
+    const {m,t}=caliper, w=caliper.pts[0].distanceTo(caliper.pts[1]), fdi=m.seg.teeth[t].fdi;
+    m.seg.manual[fdi]=w; C.computeTeeth(m.seg);
+    toast(`Tooth ${fdi}: ${w.toFixed(2)} mm (manual).`);
+    cancelCaliper(); segChanged(m);
+  }else updateModebar();
+}
+function updateModebar(){
+  const bar=$('modebar');
+  if(caliper){ const fdi=caliper.m.seg.teeth[caliper.t].fdi; bar.hidden=false; $('modetext').textContent=caliper.pts.length?`Tooth ${fdi}: now tap the other contact point.`:`Tooth ${fdi}: tap its mesial contact point, then its distal contact point.`; }
+  else if(editMode!=='off'){ bar.hidden=false; $('modetext').textContent=EDIT_HELP[editMode]; }
+  else bar.hidden=true;
+}
+$('modecancel').addEventListener('click',()=>{ cancelCaliper(); setEditMode('off'); });
+
+// ================= BASE: trim and model base =================
+const baseOpts={style:'abo',trim:{upper:20,lower:15},height:12,margin:3,align:true};
+function syncBaseUI(){
+  $('trimU').value=baseOpts.trim.upper; $('trimUv').textContent=baseOpts.trim.upper.toFixed(1)+' mm';
+  $('trimL').value=baseOpts.trim.lower; $('trimLv').textContent=baseOpts.trim.lower.toFixed(1)+' mm';
+  $('bheight').value=baseOpts.height; $('bheightv').textContent=baseOpts.height+' mm';
+  $('bmargin').value=baseOpts.margin; $('bmarginv').textContent=baseOpts.margin.toFixed(1)+' mm';
+  document.querySelectorAll('#bstyle button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===baseOpts.style));
+  $('bremove').disabled=!models.some(m=>m.base);
+}
+document.querySelectorAll('#bstyle button').forEach(b=>b.addEventListener('click',()=>{ baseOpts.style=b.dataset.s; syncBaseUI(); }));
+$('trimU').addEventListener('input',e=>{ baseOpts.trim.upper=+e.target.value; syncBaseUI(); refreshPlanes(); });
+$('trimL').addEventListener('input',e=>{ baseOpts.trim.lower=+e.target.value; syncBaseUI(); refreshPlanes(); });
+$('bheight').addEventListener('input',e=>{ baseOpts.height=+e.target.value; syncBaseUI(); });
+$('bmargin').addEventListener('input',e=>{ baseOpts.margin=+e.target.value; syncBaseUI(); });
+$('balign').addEventListener('change',e=>{ baseOpts.align=e.target.checked; });
+
+const PLANE_MAT=new THREE.MeshBasicMaterial({color:0x2f62b0,transparent:true,opacity:0.16,side:THREE.DoubleSide,depthWrite:false});
+function removePlane(m){ if(m.plane){ m.obj.remove(m.plane); m.plane.geometry.dispose(); m.plane=null; } }
+function refreshPlanes(){
+  const show=openSheet==='bpanel';
+  for(const m of models){
+    removePlane(m);
+    if(!show||m.base||!(m.jaw==='upper'||m.jaw==='lower')) continue;
+    try{ ensureFrames(); }catch(e){ continue; }
+    const f=m.frame; if(!f) continue;
+    if(m.topH==null) m.topH=C.topLevel(modelData(m).pos,f);
+    const h=m.topH-baseOpts.trim[m.jaw];
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(90,90),PLANE_MAT);
+    const ex=new THREE.Vector3(...f.ex), ez=new THREE.Vector3(...f.ez), ey=new THREE.Vector3(...f.ey);
+    const mat=new THREE.Matrix4().makeBasis(ex,ez,ey); mat.setPosition(f.o[0]+ey.x*h,f.o[1]+ey.y*h,f.o[2]+ey.z*h);
+    mesh.applyMatrix4(mat); mesh.userData.helper=true; mesh.renderOrder=3;
+    m.plane=mesh; m.obj.add(mesh);
+  }
+}
+function removeBase(m,silent){
+  if(!m.base) return;
+  m.base.meshes.forEach(x=>{ m.obj.remove(x); x.geometry.dispose(); });
+  m.origMeshes.forEach(x=>x.visible=true);
+  m.meshes=m.origMeshes; m.base=null;
+  if(!silent){ applyAppearance(m); }
+}
+async function buildBases(){
+  const targets=models.filter(m=>m.jaw==='upper'||m.jaw==='lower');
+  if(!targets.length){ toast('Set each scan to Upper or Lower in the Models panel first.'); return; }
+  toast('Building base…',0); $('bbuild').disabled=true; await nextFrame();
+  const notes=[];
+  try{
+    ensureFrames();
+    const preps=targets.map(m=>{ const d=modelData(m); return {m,pr:C.prepareBase(d.pos,d.index,m.frame,{trimDepth:baseOpts.trim[m.jaw],colors:d.colors})}; });
+    const style=j=>baseOpts.style==='abo'?(j==='upper'?'abo_upper':'abo_lower'):baseOpts.style;
+    const optsFor=(m,back)=>({style:style(m.jaw),margin:baseOpts.margin,bevel:1,baseHeight:baseOpts.height,backOffset:back,stoneColor:[lin(DEFAULT_COLOR[m.jaw]).r,lin(DEFAULT_COLOR[m.jaw]).g,lin(DEFAULT_COLOR[m.jaw]).b]});
+    let shared=null;
+    if(baseOpts.align&&preps.length===2){
+      // the back of each base, measured in scanner space along the shared front-back axis
+      const D=preps.map(({m,pr})=>{ const r=C.finishBase(pr,optsFor(m)); return r.backOffset-(m.frame.ez[0]*m.frame.o[0]+m.frame.ez[1]*m.frame.o[1]+m.frame.ez[2]*m.frame.o[2]); });
+      shared=Math.max(...D);
+    }
+    for(const {m,pr} of preps){
+      const back=shared!=null?shared+(m.frame.ez[0]*m.frame.o[0]+m.frame.ez[1]*m.frame.o[1]+m.frame.ez[2]*m.frame.o[2]):undefined;
+      const r=C.finishBase(pr,optsFor(m,back));
+      setBaseGeometry(m,r);
+      notes.push(`${m.jaw==='upper'?'Upper':'Lower'}: ${r.height.toFixed(1)} mm tall, ${r.watertight?'closed and ready to print':'not sealed (check in your printing software)'}${r.notes.length?' · '+r.notes.join(', '):''}.`);
+    }
+  }catch(e){ console.error(e); notes.push('The base could not be built: '+e.message); }
+  $('bbuild').disabled=false; hideToast();
+  $('bnote').hidden=false; $('bnote').textContent=notes.join(' ');
+  refreshPlanes(); syncBaseUI(); recenter(); renderModels(); models.forEach(applyAppearance); if(contactsOn) refreshContacts();
+}
+function setBaseGeometry(m,r){
+  removeBase(m,true);
+  const nScan=r.scanTriCount*3;
+  const posAttr=new THREE.BufferAttribute(r.pos,3);
+  const g1=new THREE.BufferGeometry(); g1.setAttribute('position',posAttr); g1.setIndex(new THREE.BufferAttribute(r.index.slice(0,nScan),1));
+  if(r.colors) g1.setAttribute('color',new THREE.BufferAttribute(r.colors,3));
+  g1.computeVertexNormals();
+  // base walls drawn flat so their edges stay crisp
+  const rest=r.index.subarray(nScan), p2=new Float32Array(rest.length*3), c2=r.colors?new Float32Array(rest.length*3):null;
+  for(let k=0;k<rest.length;k++){ const i=rest[k]; p2[3*k]=r.pos[3*i]; p2[3*k+1]=r.pos[3*i+1]; p2[3*k+2]=r.pos[3*i+2]; if(c2){ c2[3*k]=r.colors[3*i]; c2[3*k+1]=r.colors[3*i+1]; c2[3*k+2]=r.colors[3*i+2]; } }
+  const g2=new THREE.BufferGeometry(); g2.setAttribute('position',new THREE.BufferAttribute(p2,3)); if(c2) g2.setAttribute('color',new THREE.BufferAttribute(c2,3)); g2.computeVertexNormals();
+  const a=new THREE.Mesh(g1,m.material), b=new THREE.Mesh(g2,m.material);
+  if(r.colors){ a.userData.scanColor=g1.attributes.color; b.userData.scanColor=g2.attributes.color; }
+  m.origMeshes.forEach(x=>x.visible=false);
+  m.obj.add(a); m.obj.add(b);
+  m.base={meshes:[a,b],result:r}; m.meshes=[a,b];
+}
+$('bbuild').addEventListener('click',buildBases);
+$('bremove').addEventListener('click',()=>{ models.forEach(m=>removeBase(m)); $('bnote').hidden=true; syncBaseUI(); refreshPlanes(); recenter(); renderModels(); if(contactsOn) refreshContacts(); });
+
+// file saving: inside Claude the page asks the viewer first; elsewhere a normal download
+async function saveFile(name,data){
+  try{
+    if(window.claude&&typeof window.claude.use==='function'){
+      const dl=await window.claude.use('downloads');
+      if(dl){ try{ await dl.save({filename:name,data}); return true; }catch(e){ if(e&&e.code==='declined') return false; toast('The file could not be saved here ('+(e&&e.message||e)+').'); return false; } }
+    }
+  }catch(e){}
+  const url=URL.createObjectURL(new Blob([data])); const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),5000);
+  return true;
+}
+const inClaude=()=>!!(window.claude&&typeof window.claude.use==='function');
+const safeName=s=>s.replace(/[^\w\-]+/g,'_').replace(/^_+|_+$/g,'')||'model';
+$('bexport').addEventListener('click',async()=>{
+  const list=models.filter(m=>m.jaw==='upper'||m.jaw==='lower'||models.length===1);
+  if(!list.length){ toast('Open a scan first.'); return; }
+  const files=list.map(m=>{
+    let pos,index;
+    if(m.base){ pos=m.base.result.pos; index=m.base.result.index; } else { const d=modelData(m); pos=d.pos; index=d.index; }
+    return {name:safeName(m.name)+(m.base?'_base':'')+'.stl',data:C.stlBinary(pos,index,m.name)};
+  });
+  if(files.length===1&&!inClaude()) await saveFile(files[0].name,files[0].data);
+  else await saveFile((isSample?'example':'models')+'_stl.zip',C.zipStore(files));
+});
+
+// ================= ANALYSIS =================
+let lastAnalysis=null;
+const f1=x=>x==null||isNaN(x)?'–':x.toFixed(1), f2=x=>x==null||isNaN(x)?'–':x.toFixed(2);
+const sgn=(x,d=1)=>x==null||isNaN(x)?'–':(x>0?'+':x<0?'−':'')+Math.abs(x).toFixed(d);
+function refreshAnalysis(){ if(openSheet==='apanel') renderAnalysis(); }
+function computeAnalysis(){
+  const U=models.find(m=>m.jaw==='upper'&&m.seg), L=models.find(m=>m.jaw==='lower'&&m.seg);
+  if(!U&&!L) return null;
+  return {U,L,a:C.analyze(U?U.seg:null,L?L.seg:null)};
+}
+function meter(ratio,ideal,sd){
+  const lo=ideal-4*sd, hi=ideal+4*sd, pc=v=>Math.max(0,Math.min(100,(v-lo)/(hi-lo)*100));
+  return `<div class="meter" role="img" aria-label="Ratio ${ratio.toFixed(1)} against normal range ${(ideal-sd).toFixed(1)} to ${(ideal+sd).toFixed(1)}"><span class="band" style="left:${pc(ideal-sd)}%;width:${pc(ideal+sd)-pc(ideal-sd)}%"></span><span class="mark" style="left:${pc(ratio)}%"></span></div>
+  <div class="meter-scale"><span>${lo.toFixed(1)}</span><span>ideal ${ideal} ± ${sd}</span><span>${hi.toFixed(1)}</span></div>`;
+}
+function boltonBlock(title,b,teeth){
+  if(!b||b.ratio==null) return `<div class="ablock"><h4>${title}</h4><p class="missing">Needs widths of ${teeth} in both arches${b&&b.missing&&b.missing.length?' (missing '+b.missing.join(', ')+')':''}.</p></div>`;
+  const cls=b.withinSD?'ok':Math.abs(b.diff)<=2*b.sd?'warn':'bad';
+  const verdict=b.withinSD?'Within the normal range':`${b.excessArch==='mandibular'?'Mandibular':'Maxillary'} excess of ${b.excess.toFixed(2)} mm`;
+  return `<div class="ablock"><h4>${title}</h4>
+    <div class="verdict ${cls}">Ratio ${b.ratio.toFixed(2)}% · ${verdict}</div>
+    ${meter(b.ratio,b.ideal,b.sd)}
+    <table class="atable"><tbody>
+      <tr><td>Maxillary sum</td><td>${f2(b.max)} mm</td></tr>
+      <tr><td>Mandibular sum</td><td>${f2(b.mand)} mm</td></tr>
+      <tr><td>${b.excessArch==='mandibular'?'Ideal mandibular sum':'Ideal maxillary sum'}</td><td>${f2(b.idealOther)} mm</td></tr>
+    </tbody></table></div>`;
+}
+function renderAnalysis(){
+  const box=$('abody'), r=computeAnalysis();
+  lastAnalysis=r;
+  if(!r){ box.innerHTML=`<p class="help">The analyses use the measured tooth widths. Open both arches, then find the teeth.</p><div class="row"><button class="primary" id="afind">Find teeth</button></div>`; $('afind').onclick=async()=>{ await findTeeth(); renderAnalysis(); }; return; }
+  const {U,L,a}=r;
+  const byFdi={}; [U,L].forEach(m=>m&&m.seg.teeth.forEach(t=>byFdi[t.fdi]=t));
+  const cell=k=>byFdi[k]?`${byFdi[k].width.toFixed(2)}${byFdi[k].manual?'*':''}`:'–';
+  const units=[1,2,3,4,5,6,7,8].filter(u=>[1,2,3,4].some(q=>byFdi[q*10+u]));
+  const anyManual=Object.values(byFdi).some(t=>t.manual);
+  let h=`<div class="ablock"><h4>Tooth widths (mm)</h4><div class="scroll-x"><table class="atable"><thead><tr><th>Tooth</th><th>UR</th><th>UL</th><th>LR</th><th>LL</th></tr></thead><tbody>
+    ${units.map(u=>`<tr><td>${u} · ${TOOTH_NAMES[u-1]}</td><td>${cell(10+u)}</td><td>${cell(20+u)}</td><td>${cell(40+u)}</td><td>${cell(30+u)}</td></tr>`).join('')}
+    </tbody></table></div>${anyManual?'<p class="missing">* measured by hand</p>':''}</div>`;
+  h+=boltonBlock('Bolton anterior (3–3)',a.boltonAnterior,'13–23 and 33–43');
+  h+=boltonBlock('Bolton overall (6–6)',a.boltonOverall,'16–26 and 36–46');
+  // space analysis
+  const space=(name,d)=>!d||d.available==null?`<tr><td>${name}</td><td colspan="3">needs both first molars</td></tr>`:
+    `<tr><td>${name}</td><td>${f1(d.available)}</td><td>${f1(d.required)}</td><td>${sgn(d.discrepancy)}</td></tr>`;
+  h+=`<div class="ablock"><h4>Space analysis</h4><table class="atable"><thead><tr><th>Arch</th><th>Available</th><th>Required</th><th>Difference</th></tr></thead><tbody>
+    ${U?space('Upper',a.upper):''}${L?space('Lower',a.lower):''}</tbody></table>
+    <p class="missing">Available: measured along the contact points, from the mesial contact of one first molar to the other. Required: sum of the teeth in front of them (5–5). Negative means crowding, positive means spacing.</p></div>`;
+  // arch dimensions
+  const dimRow=(label,k)=>`<tr><td>${label}</td>${U?`<td>${f1(a.upper&&a.upper[k])}</td>`:''}${L?`<td>${f1(a.lower&&a.lower[k])}</td>`:''}</tr>`;
+  h+=`<div class="ablock"><h4>Arch dimensions (mm)</h4><table class="atable"><thead><tr><th></th>${U?'<th>Upper</th>':''}${L?'<th>Lower</th>':''}</tr></thead><tbody>
+    ${dimRow('Intercanine (cusp tips)','intercanine')}${dimRow('Inter-premolar (1st PM cusps)','interpremolar')}${dimRow('Intermolar (MB cusps)','intermolar')}${dimRow('Arch depth','depth')}${dimRow('Arch perimeter 6–6','available')}
+    </tbody></table></div>`;
+  // Pont / Korkhaus
+  if(a.pont){ const p=a.pont;
+    h+=`<div class="ablock"><h4>Pont's index and Korkhaus</h4><table class="atable"><thead><tr><th>Upper incisors 12–22: ${f2(p.SI)} mm</th><th>Measured</th><th>Ideal</th><th>Difference</th></tr></thead><tbody>
+      <tr><td>Premolar width (14–24)</td><td>${f1(p.premolar)}</td><td>${f1(p.idealPremolar)}</td><td>${sgn(p.premolar!=null?p.premolar-p.idealPremolar:null)}</td></tr>
+      <tr><td>Molar width (16–26)</td><td>${f1(p.molar)}</td><td>${f1(p.idealMolar)}</td><td>${sgn(p.molar!=null?p.molar-p.idealMolar:null)}</td></tr>
+      <tr><td>Korkhaus anterior length</td><td>${f1(p.korkhaus)}</td><td>${f1(p.korkhausIdeal)}</td><td>${sgn(p.korkhaus!=null?p.korkhaus-p.korkhausIdeal:null)}</td></tr>
+    </tbody></table><p class="missing">Ideals: premolar = SI × 100/80, molar = SI × 100/64, Korkhaus = SI × 100/160. Negative difference suggests a narrow (or short) arch.</p></div>`; }
+  if(a.tonn) h+=`<div class="ablock"><h4>Tonn's ratio</h4><table class="atable"><tbody><tr><td>Lower incisors / upper incisors</td><td>${f2(a.tonn.lower)} / ${f2(a.tonn.upper)}</td></tr><tr><td>Ratio (ideal 74)</td><td>${f1(a.tonn.ratio)}</td></tr></tbody></table></div>`;
+  if(a.tanaka) h+=`<div class="ablock"><h4>Tanaka–Johnston (mixed dentition)</h4><table class="atable"><tbody><tr><td>Lower incisors 42–32</td><td>${f2(a.tanaka.lowerIncisors)}</td></tr><tr><td>Predicted upper 3+4+5 per side</td><td>${f2(a.tanaka.upperQuadrant)}</td></tr><tr><td>Predicted lower 3+4+5 per side</td><td>${f2(a.tanaka.lowerQuadrant)}</td></tr></tbody></table><p class="missing">Use only when the canines and premolars have not erupted.</p></div>`;
+  if(a.occlusion){ const o=a.occlusion;
+    h+=`<div class="ablock"><h4>Occlusion</h4><table class="atable"><tbody>
+      <tr><td>Overjet</td><td>${f1(o.overjet)} mm</td></tr>
+      <tr><td>Overbite</td><td>${o.overbite<0?'open bite '+f1(-o.overbite):f1(o.overbite)} mm</td></tr>
+      <tr><td>Upper midline vs lower</td><td>${Math.abs(o.midlineShift)<0.25?'coincident':f1(Math.abs(o.midlineShift))+' mm to patient’s '+(o.midlineShift>0?'left':'right')}</td></tr>
+    </tbody></table><p class="missing">Taken from the scans as they were exported in the bite.</p></div>`; }
+  h+=`<p class="note">Values depend on the tooth boundaries. Check them in the Teeth panel and measure any tooth by hand if its boundary is unclear.</p>`;
+  box.innerHTML=h;
+}
+function reportRows(){
+  const r=lastAnalysis||computeAnalysis(); if(!r) return null;
+  const {U,L,a}=r, rows=[];
+  rows.push(['Section','Item','Value','Unit']);
+  [U,L].forEach(m=>m&&m.seg.teeth.slice().sort((x,y)=>x.fdi-y.fdi).forEach(t=>rows.push(['Tooth width',String(t.fdi),t.width.toFixed(2),'mm'+(t.manual?' (manual)':'')])));
+  const bl=(n,b)=>{ if(b&&b.ratio!=null){ rows.push([n,'Maxillary sum',b.max.toFixed(2),'mm'],[n,'Mandibular sum',b.mand.toFixed(2),'mm'],[n,'Ratio',b.ratio.toFixed(2),'% (ideal '+b.ideal+' ± '+b.sd+')'],[n,b.withinSD?'Result':(b.excessArch==='mandibular'?'Mandibular excess':'Maxillary excess'),b.withinSD?'within normal range':b.excess.toFixed(2),b.withinSD?'':'mm']); } };
+  bl('Bolton anterior',a.boltonAnterior); bl('Bolton overall',a.boltonOverall);
+  for(const [n,d] of [['Upper',a.upper],['Lower',a.lower]]) if(d){
+    const add=(k,lab)=>{ if(d[k]!=null) rows.push([n+' arch',lab,d[k].toFixed(1),'mm']); };
+    add('available','Available space 6-6'); add('required','Required space 5-5'); add('discrepancy','Space difference'); add('intercanine','Intercanine width'); add('interpremolar','Inter-premolar width'); add('intermolar','Intermolar width'); add('depth','Arch depth'); }
+  if(a.pont){ const p=a.pont; [['premolar','Pont premolar width measured'],['idealPremolar','Pont premolar width ideal'],['molar','Pont molar width measured'],['idealMolar','Pont molar width ideal'],['korkhaus','Korkhaus measured'],['korkhausIdeal','Korkhaus ideal']].forEach(([k,l])=>{ if(p[k]!=null) rows.push(['Pont/Korkhaus',l,p[k].toFixed(1),'mm']); }); }
+  if(a.tonn) rows.push(['Tonn','Ratio',a.tonn.ratio.toFixed(1),'(ideal 74)']);
+  if(a.tanaka) rows.push(['Tanaka-Johnston','Upper 3+4+5 per side',a.tanaka.upperQuadrant.toFixed(2),'mm'],['Tanaka-Johnston','Lower 3+4+5 per side',a.tanaka.lowerQuadrant.toFixed(2),'mm']);
+  if(a.occlusion){ rows.push(['Occlusion','Overjet',a.occlusion.overjet.toFixed(1),'mm'],['Occlusion','Overbite',a.occlusion.overbite.toFixed(1),'mm'],['Occlusion','Midline shift (+ = upper to patient left)',a.occlusion.midlineShift.toFixed(1),'mm']); }
+  return rows;
+}
+$('acsv').addEventListener('click',async()=>{
+  const rows=reportRows(); if(!rows){ toast('Find the teeth first.'); return; }
+  const csv=rows.map(r=>r.map(v=>/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v).join(',')).join('\n');
+  await saveFile('arch_analysis.csv',csv);
+});
+$('acopy').addEventListener('click',()=>{
+  const rows=reportRows(); if(!rows){ toast('Find the teeth first.'); return; }
+  const txt='Dental Scan Viewer — arch analysis\n'+rows.slice(1).map(r=>`${r[0]} · ${r[1]}: ${r[2]} ${r[3]}`.trim()).join('\n');
+  const fallback=()=>{ const ta=document.createElement('textarea'); ta.value=txt; ta.style.cssText='position:fixed;left:-9999px'; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); toast('Report copied.'); }catch(e){ toast('Copy is blocked here. Use Export CSV instead.'); } ta.remove(); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(()=>toast('Report copied.'),fallback); else fallback();
+});
+
+// ================= example case: scan-like surfaces with known tooth sizes =================
+function makeExampleArch(halfPts,teeth,gap){
+  const cat=(pts,samples)=>{ const out=[], P=[pts[0],...pts,pts[pts.length-1]];
+    for(let i=1;i<P.length-2;i++) for(let k=0;k<samples;k++){ const t=k/samples,t2=t*t,t3=t2*t;
+      const f=(a,b,c,d)=>0.5*((2*b)+(-a+c)*t+(2*a-5*b+4*c-d)*t2+(-a+3*b-3*c+d)*t3);
+      out.push([f(P[i-1][0],P[i][0],P[i+1][0],P[i+2][0]),f(P[i-1][1],P[i][1],P[i+1][1],P[i+2][1])]); }
+    out.push(pts[pts.length-1]); return out; };
+  const arc=poly=>{ const cum=[0]; for(let i=1;i<poly.length;i++) cum.push(cum[i-1]+Math.hypot(poly[i][0]-poly[i-1][0],poly[i][1]-poly[i-1][1]));
+    return {L:cum[cum.length-1],at:s=>{ let i=0; while(i<cum.length-2&&cum[i+1]<s) i++; const t=(s-cum[i])/(cum[i+1]-cum[i]);
+      const tg=[poly[i+1][0]-poly[i][0],poly[i+1][1]-poly[i][1]], l=Math.hypot(...tg);
+      return {p:[poly[i][0]+tg[0]*t,poly[i][1]+tg[1]*t],t:[tg[0]/l,tg[1]/l]}; }}; };
+  const half=cat(halfPts,20), A=arc(half);
+  const DIMS={I:[5.2,2.8],i:[4.6,2.6],c:[5.4,3.6],p:[4.1,3.9],m:[3.7,5.0]};
+  const T=[];
+  for(const side of [1,-1]){ let s=0.3; for(const [w,type] of teeth){ const {p,t}=A.at(Math.min(s+w/2,A.L)); s+=w+gap;
+    T.push({c:[p[0]*side,p[1]],tx:[t[0]*side,t[1]],type,d:[w/2,DIMS[type][0],DIMS[type][1]]}); } }
+  const full=[...half.slice(1).reverse().map(p=>[-p[0],p[1]]),...half], F=arc(full), samples=[];
+  for(let k=0;k<=260;k++) samples.push(F.at(F.L*k/260).p);
+  const enamel=lin('#efe6d2'), gum=lin('#cf8a86');
+  const g=0.25, x0=-36,x1=36,z0=-36,z1=33, nx=Math.round((x1-x0)/g)+1, nz=Math.round((z1-z0)/g)+1;
+  const id=new Int32Array(nx*nz).fill(-1), pos=[], col=[];
+  for(let j=0;j<nz;j++) for(let i=0;i<nx;i++){
+    const x=x0+i*g, z=z0+j*g; let r=Infinity; for(const q of samples){ const d=(x-q[0])**2+(z-q[1])**2; if(d<r) r=d; } r=Math.sqrt(r);
+    if(r>8.5) continue;
+    let y=r<6?-1.6+0.85*Math.sqrt(36-r*r):-1.6-(r-6)*1.5, tooth=false;
+    for(const tt of T){ const dx=x-tt.c[0], dz=z-tt.c[1]; const lx=dx*tt.tx[0]+dz*tt.tx[1], lz=-dx*tt.tx[1]+dz*tt.tx[0];
+      const q=1-(lx/tt.d[0])**2-(lz/tt.d[2])**2; if(q<=0) continue;
+      let yy=4.3+tt.d[1]*Math.sqrt(q);
+      if((tt.type==='m'||tt.type==='p')&&q>=0.85) yy+=0.55*Math.cos(lx*(tt.type==='m'?1.25:1.7))*Math.cos(lz*1.3)-0.25;
+      if(yy>y){ y=yy; tooth=true; } }
+    id[j*nx+i]=pos.length/3; pos.push(x,y,z); const c=tooth?enamel:gum; col.push(c.r,c.g,c.b);
+  }
+  const idx=[];
+  for(let j=0;j<nz-1;j++) for(let i=0;i<nx-1;i++){ const a=id[j*nx+i],b=id[j*nx+i+1],c=id[(j+1)*nx+i],d=id[(j+1)*nx+i+1];
+    if(a>=0&&b>=0&&c>=0&&d>=0) idx.push(a,c,b, b,c,d); }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); geo.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); geo.setIndex(idx);
+  return geo;
+}
+function makeExampleCase(){
+  const lower=makeExampleArch([[0,21],[8,18.5],[14.5,13],[18.5,5],[21,-6],[22.6,-18],[23.5,-27]],
+    [[5.0,'i'],[5.5,'i'],[7.0,'c'],[7.0,'p'],[7.0,'p'],[11.0,'m'],[10.5,'m']],-0.3);
+  const upper=makeExampleArch([[0,25.5],[8.8,22.5],[16,16],[20.6,7],[23.2,-4.5],[24.8,-16.5],[25.6,-27]],
+    [[8.5,'I'],[6.5,'i'],[7.5,'c'],[7.0,'p'],[6.5,'p'],[10.0,'m'],[9.0,'m']],-0.3);
+  upper.scale(1,-1,1);
+  const ix=upper.index.array; for(let i=0;i<ix.length;i+=3){ const t=ix[i+1]; ix[i+1]=ix[i+2]; ix[i+2]=t; }
+  upper.translate(0,16.7,0);
+  [upper,lower].forEach(g=>g.computeVertexNormals());
+  addModel(new THREE.Mesh(upper),'Example upper arch','Generated','upper','scan');
+  addModel(new THREE.Mesh(lower),'Example lower arch','Generated','lower','scan');
+  isSample=true;
+  afterChange(true);
+}
+makeExampleCase();
+if(stage.clientWidth<720) $('panel').open=false;
+
+// ---------- display panel ----------
+$('dauto').addEventListener('click',autoDisplay);
+document.querySelectorAll('#res button').forEach(b=>b.addEventListener('click',()=>{ display.res=b.dataset.r; applyDisplay(); }));
+document.querySelectorAll('#surface button').forEach(b=>b.addEventListener('click',()=>{ display.surface=b.dataset.s; applyDisplay(); }));
+document.querySelectorAll('#shading button').forEach(b=>b.addEventListener('click',()=>{ display.shading=b.dataset.h; applyDisplay(); }));
+$('bright').addEventListener('input',e=>{ display.exposure=+e.target.value; applyLights(); });
+$('contrast').addEventListener('input',e=>{ display.contrast=+e.target.value; applyLights(); });
+autoDisplay(); syncBaseUI();
+
+// ---------- loop ----------
+const tmp=new THREE.Vector3();
+function frame(now){
+  if(tween){
+    const k=Math.min((now-tween.start)/380,1), e=1-Math.pow(1-k,3);
+    camera.position.lerpVectors(tween.from,tween.to,e);
+    controls.target.lerpVectors(tween.tFrom,new THREE.Vector3(),e);
+    if(k>=1) tween=null;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  const w=stage.clientWidth,h=stage.clientHeight;
+  for(const m of measures){
+    tmp.copy(m.a).add(m.b).multiplyScalar(0.5).project(camera);
+    m.tag.hidden=tmp.z>1;
+    m.tag.style.left=((tmp.x+1)/2*w)+'px'; m.tag.style.top=((1-tmp.y)/2*h)+'px';
+  }
+  for(const m of models){
+    const vis=teethLabelsOn&&shown(m);
+    for(const el of m.labelEls){
+      if(!vis){ el.hidden=true; continue; }
+      tmp.copy(el._p).applyMatrix4(m.obj.matrixWorld).project(camera);
+      el.hidden=tmp.z>1||Math.abs(tmp.x)>1.05||Math.abs(tmp.y)>1.05;
+      el.style.left=((tmp.x+1)/2*w)+'px'; el.style.top=((1-tmp.y)/2*h)+'px';
+    }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- app: install, offline, open-with ----------
+let deferredPrompt=null;
+addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; $('install').hidden=false; });
+$('install').addEventListener('click',async()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; $('install').hidden=true; });
+addEventListener('appinstalled',()=>{ $('install').hidden=true; toast('Installed. Open Dental Scan Viewer from your apps or home screen.'); });
+if('serviceWorker' in navigator && location.protocol.startsWith('http') && !location.hostname.endsWith('claude.ai') && !location.hostname.includes('claudeusercontent')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('launchQueue' in window) launchQueue.setConsumer(p=>{ if(p.files&&p.files.length) Promise.all(p.files.map(f=>f.getFile())).then(loadFiles); });
+</script>
+
+</body></html>
